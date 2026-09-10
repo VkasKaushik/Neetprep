@@ -71,7 +71,7 @@ export const App: React.FC = () => {
           {activeTab === 'today' && <TodayScreen onNavigateToTab={setActiveTab} />}
           {activeTab === 'plan' && <PlanScreen />}
           {activeTab === 'tests' && <TestsScreen />}
-          {activeTab === 'progress' && <ProgressScreen />}
+          {activeTab === 'progress' && <ProgressScreen onNavigateToTab={setActiveTab} />}
         </AppLayout>
       ) : (
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
