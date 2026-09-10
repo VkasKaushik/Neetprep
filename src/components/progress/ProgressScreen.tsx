@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Chapter, SubjectType, Reflection, AppInsight } from '../../types';
+import { Chapter, SubjectType, Reflection, AppInsight, WeakTopic, RevisionCycle, PriorityLevel } from '../../types';
 import { storageService } from '../../services/storageService';
-import { SubjectBadge, ProgressBar, Modal } from '../common/UIComponents';
+import { SubjectBadge, ProgressBar, Modal, PriorityBadge } from '../common/UIComponents';
 import { 
   TrendingUp, 
   ChevronRight, 
@@ -10,7 +10,10 @@ import {
   Sparkles,
   MessageSquare,
   Flame,
-  BarChart3
+  BarChart3,
+  BookOpen,
+  AlertTriangle,
+  Plus
 } from 'lucide-react';
 
 export const ProgressScreen: React.FC = () => {
@@ -30,6 +33,21 @@ export const ProgressScreen: React.FC = () => {
   const [refQ4, setRefQ4] = useState('');
   const [refQ5, setRefQ5] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Weak Topics & Spaced Revision (Moved from Tests tab)
+  const [weakTopics, setWeakTopics] = useState<WeakTopic[]>(() => storageService.getWeakTopics());
+  const [revisions, setRevisions] = useState<RevisionCycle[]>(() => storageService.getRevisions());
+  const [isAddWeakTopicOpen, setIsAddWeakTopicOpen] = useState(false);
+  const [newWeakSubject, setNewWeakSubject] = useState<SubjectType>('Physics');
+  const [newWeakTopicName, setNewWeakTopicName] = useState('');
+  const [newWeakChapterName, setNewWeakChapterName] = useState('');
+  const [newWeakPriority, setNewWeakPriority] = useState<PriorityLevel>('High');
+  const [progressToast, setProgressToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setProgressToast(msg);
+    setTimeout(() => setProgressToast(null), 3000);
+  };
 
   const overallPrep = storageService.calculateOverallPreparation();
   const totalStudyMinutes = storageService.getTotalStudyMinutes();
@@ -144,6 +162,47 @@ export const ProgressScreen: React.FC = () => {
       setSaveSuccess(false);
       setIsReflectionModalOpen(false);
     }, 1200);
+  };
+
+  const handleCreateRevisionTask = (topicId: string, topicName: string) => {
+    const task = storageService.createRevisionTaskFromWeakTopic(topicId);
+    if (task) {
+      setWeakTopics(storageService.getWeakTopics());
+      showToast(`Added revision task for "${topicName}" to Today's Plan!`);
+    }
+  };
+
+  const handleSaveWeakTopic = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWeakTopicName.trim()) return;
+
+    const todayDate = new Date();
+    const nextDate = new Date(todayDate);
+    nextDate.setDate(todayDate.getDate() + 3);
+
+    storageService.addWeakTopic({
+      subject_name: newWeakSubject,
+      chapter_name: newWeakChapterName || newWeakSubject,
+      topic_name: newWeakTopicName.trim(),
+      priority: newWeakPriority,
+      status: 'Needs Revision',
+      last_studied: todayDate.toISOString().split('T')[0],
+      next_revision: nextDate.toISOString().split('T')[0]
+    });
+
+    setWeakTopics(storageService.getWeakTopics());
+    setNewWeakTopicName('');
+    setNewWeakChapterName('');
+    setIsAddWeakTopicOpen(false);
+    showToast('Weak topic scheduled for revision.');
+  };
+
+  const handleToggleRevision = (
+    revId: string,
+    step: 'initial' | 'rev1' | 'rev2' | 'rev3' | 'rev4'
+  ) => {
+    storageService.toggleRevisionStep(revId, step);
+    setRevisions(storageService.getRevisions());
   };
 
   return (
@@ -370,7 +429,123 @@ export const ProgressScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. GROWTH VELOCITY CHARTS */}
+      {/* 5. WEAK TOPICS FOCUS (Moved from Tests tab) */}
+      <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <h2 className="text-xs uppercase tracking-wider font-bold text-white">
+              Weak Topics Focus
+            </h2>
+          </div>
+          <button
+            onClick={() => setIsAddWeakTopicOpen(true)}
+            className="text-xs text-primary-light hover:underline font-bold"
+          >
+            + Add Weak Topic
+          </button>
+        </div>
+
+        {weakTopics.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-[#222228] text-center border border-white/[0.06]">
+            <p className="text-xs text-zinc-400">
+              No weak topics added yet. Add difficult topics to schedule targeted revision.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {weakTopics.map(item => (
+              <div
+                key={item.id}
+                className="p-3.5 rounded-2xl bg-[#222228] border border-white/[0.07] space-y-2.5 flex flex-col justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <SubjectBadge subject={item.subject_name} size="sm" />
+                    <PriorityBadge priority={item.priority} />
+                  </div>
+                  <h3 className="text-sm font-bold text-white tracking-tight">{item.topic_name}</h3>
+                  <p className="text-xs text-zinc-400 truncate">{item.chapter_name}</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCreateRevisionTask(item.id, item.topic_name)}
+                  className="w-full py-1.5 px-3 rounded-full bg-[#2c2c36] hover:bg-[#6e3ff5] text-zinc-200 hover:text-white text-xs font-semibold transition border border-white/[0.08] flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#8b5cf6]" />
+                  Revise Today
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 6. SPACED REVISION TRACKER (Moved from Tests tab) */}
+      <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <BookOpen className="w-4 h-4 text-purple-400" />
+            <h2 className="text-xs uppercase tracking-wider font-bold text-white">
+              Spaced Revision Tracker
+            </h2>
+          </div>
+          <span className="text-xs text-zinc-400">4-Stage Retention</span>
+        </div>
+
+        {revisions.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-[#222228] text-center border border-white/[0.06]">
+            <p className="text-xs text-zinc-400">
+              No active revision cycles yet. Topics scheduled from weak areas or tasks will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {revisions.map(rev => (
+              <div key={rev.id} className="p-3.5 rounded-2xl bg-[#222228] border border-white/[0.07] space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <SubjectBadge subject={rev.subject_name} size="sm" />
+                      <span className="text-sm font-bold text-white tracking-tight">{rev.topic_name}</span>
+                    </div>
+                    <span className="text-xs text-zinc-400">{rev.chapter_name}</span>
+                  </div>
+                  <div className="text-xs text-primary-light font-bold">
+                    Next: {rev.next_revision || 'Upcoming'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-center">
+                  {[
+                    { key: 'initial', label: 'Initial', done: rev.initial_studied },
+                    { key: 'rev1', label: 'Rev 1', done: rev.rev1_completed },
+                    { key: 'rev2', label: 'Rev 2', done: rev.rev2_completed },
+                    { key: 'rev3', label: 'Rev 3', done: rev.rev3_completed },
+                    { key: 'rev4', label: 'Rev 4', done: rev.rev4_completed },
+                  ].map(step => (
+                    <button
+                      key={step.key}
+                      onClick={() => handleToggleRevision(rev.id, step.key as any)}
+                      className={`p-1.5 rounded-full border text-xs font-bold transition flex items-center justify-center gap-1 ${
+                        step.done
+                          ? 'border-[#6e3ff5] bg-[#6e3ff5] text-white shadow-btn'
+                          : 'border-white/[0.08] bg-[#1a1a20] text-zinc-400'
+                      }`}
+                    >
+                      {step.done && <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />}
+                      {step.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 7. GROWTH VELOCITY CHARTS */}
       <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -716,6 +891,102 @@ export const ProgressScreen: React.FC = () => {
           </button>
         </form>
       </Modal>
+
+      {/* ADD WEAK TOPIC MODAL */}
+      <Modal
+        isOpen={isAddWeakTopicOpen}
+        onClose={() => setIsAddWeakTopicOpen(false)}
+        title="Add Weak Topic"
+        subtitle="Schedule targeted spaced revision"
+      >
+        <form onSubmit={handleSaveWeakTopic} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
+              Subject
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['Physics', 'Chemistry', 'Biology'] as SubjectType[]).map(sub => (
+                <button
+                  key={sub}
+                  type="button"
+                  onClick={() => setNewWeakSubject(sub)}
+                  className={`py-2 px-3 rounded-2xl text-xs font-bold border transition ${
+                    newWeakSubject === sub
+                      ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-btn'
+                      : 'border-white/[0.08] bg-[#222228] text-zinc-300'
+                  }`}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
+              Topic Name
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Kirchhoff's Laws / Aldol Condensation"
+              value={newWeakTopicName}
+              onChange={e => setNewWeakTopicName(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl dark-input text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
+              Chapter Name (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Current Electricity"
+              value={newWeakChapterName}
+              onChange={e => setNewWeakChapterName(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl dark-input text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
+              Priority
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['High', 'Medium', 'Low'] as PriorityLevel[]).map(lvl => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setNewWeakPriority(lvl)}
+                  className={`py-2 px-3 rounded-2xl text-xs font-bold border transition ${
+                    newWeakPriority === lvl
+                      ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-btn'
+                      : 'border-white/[0.08] bg-[#222228] text-zinc-300'
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 rounded-full btn-primary text-xs font-bold transition shadow-btn"
+          >
+            Add Weak Topic
+          </button>
+        </form>
+      </Modal>
+
+      {/* Progress Toast */}
+      {progressToast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-[#6e3ff5] text-white font-bold text-xs py-2.5 px-5 rounded-full shadow-btn animate-fade-in flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4" />
+          {progressToast}
+        </div>
+      )}
     </div>
   );
 };
