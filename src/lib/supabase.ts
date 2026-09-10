@@ -28,8 +28,9 @@ export function normalizeSupabaseKey(rawKey: string): string {
 }
 
 // Application's own Supabase backend credentials from environment
-const rawEnvUrl = (import.meta.env.VITE_SUPABASE_URL || (import.meta.env as any).SUPABASE_URL || '') as string;
-const rawEnvKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || (import.meta.env as any).SUPABASE_ANON_KEY || '') as string;
+const envObj: any = (typeof import.meta !== 'undefined' && import.meta && import.meta.env) ? import.meta.env : {};
+const rawEnvUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || '') as string;
+const rawEnvKey = (envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || '') as string;
 
 // Silent cached fallback (from previous session or env)
 const rawStoredUrl = typeof window !== 'undefined' ? (localStorage.getItem('neet_supabase_url') || '') : '';

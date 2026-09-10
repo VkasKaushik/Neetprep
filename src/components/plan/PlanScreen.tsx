@@ -27,26 +27,30 @@ export const PlanScreen: React.FC = () => {
   // Edit Task Form State
   const [editTitle, setEditTitle] = useState('');
   const [editChapter, setEditChapter] = useState('');
-  const [editSubject, setEditSubject] = useState<SubjectType>('Physics');
-  const [editTaskType, setEditTaskType] = useState<TaskType>('MCQs');
-  const [editDuration, setEditDuration] = useState<number>(60);
+  const [editTopic, setEditTopic] = useState('');
+  const [editSubject, setEditSubject] = useState<SubjectType | 'Other' | null>(null);
+  const [editTaskType, setEditTaskType] = useState<TaskType | null>(null);
+  const [editDuration, setEditDuration] = useState<number | string>('');
   const [editDate, setEditDate] = useState<string>(today);
   const [editPriority, setEditPriority] = useState<PriorityLevel>('Medium');
+  const [editNotes, setEditNotes] = useState<string>('');
   const [editCompleted, setEditCompleted] = useState<boolean>(false);
 
   // Populate edit form when a task is selected
   useEffect(() => {
     if (editingTask) {
-      setEditTitle(editingTask.title);
+      setEditTitle(editingTask.title || '');
       setEditChapter(editingTask.chapter_name || '');
-      setEditSubject(editingTask.subject_name);
-      setEditTaskType(editingTask.task_type);
-      setEditDuration(editingTask.duration);
-      setEditDate(editingTask.date);
-      setEditPriority(editingTask.priority);
+      setEditTopic(editingTask.topic_name || '');
+      setEditSubject((editingTask.subject_name as any) || null);
+      setEditTaskType(editingTask.task_type || null);
+      setEditDuration(editingTask.duration !== undefined && editingTask.duration !== null ? editingTask.duration : '');
+      setEditDate(editingTask.date || today);
+      setEditPriority(editingTask.priority || 'Medium');
+      setEditNotes(editingTask.notes || '');
       setEditCompleted(editingTask.completed);
     }
-  }, [editingTask]);
+  }, [editingTask, today]);
 
   // Month navigation: title formatted as Month Year
   const monthYearTitle = useMemo(() => {
@@ -155,12 +159,14 @@ export const PlanScreen: React.FC = () => {
     storageService.updateTask(editingTask.id, {
       title: editTitle.trim() || editingTask.title,
       chapter_name: editChapter.trim() || undefined,
-      subject_name: editSubject,
-      subject_id: editSubject,
-      task_type: editTaskType,
-      duration: Number(editDuration) || 60,
-      date: editDate,
+      topic_name: editTopic.trim() || undefined,
+      subject_name: editSubject || undefined,
+      subject_id: editSubject || undefined,
+      task_type: editTaskType || undefined,
+      duration: editDuration !== '' && Number(editDuration) > 0 ? Number(editDuration) : undefined,
+      date: editDate || editingTask.date,
       priority: editPriority,
+      notes: editNotes.trim() || undefined,
       completed: editCompleted
     });
 
@@ -330,14 +336,16 @@ export const PlanScreen: React.FC = () => {
               {/* Task Content */}
               <div className="min-w-0 flex-1 space-y-1">
                 {/* Subject and Meaningful Priority (High only) */}
-                <div className="flex items-center gap-2">
-                  <SubjectBadge subject={task.subject_name} size="sm" />
-                  {task.priority === 'High' && !task.completed && (
-                    <span className="text-[10px] font-semibold text-rose-400 bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20">
-                      High
-                    </span>
-                  )}
-                </div>
+                {(task.subject_name || (task.priority === 'High' && !task.completed)) && (
+                  <div className="flex items-center gap-2">
+                    {task.subject_name && <SubjectBadge subject={task.subject_name} size="sm" />}
+                    {task.priority === 'High' && !task.completed && (
+                      <span className="text-[10px] font-semibold text-rose-400 bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20">
+                        High
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Chapter / task name */}
                 <div>
@@ -356,14 +364,20 @@ export const PlanScreen: React.FC = () => {
                 </div>
 
                 {/* Duration · Task type */}
-                <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                  <span className="flex items-center gap-1 text-zinc-300 font-medium">
-                    <Clock className="w-3 h-3 text-zinc-500" />
-                    {task.duration}m
-                  </span>
-                  <span>·</span>
-                  <span className="text-zinc-300 font-medium">{task.task_type}</span>
-                </div>
+                {(task.duration || task.task_type) && (
+                  <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                    {task.duration ? (
+                      <span className="flex items-center gap-1 text-zinc-300 font-medium">
+                        <Clock className="w-3 h-3 text-zinc-500" />
+                        {task.duration}m
+                      </span>
+                    ) : null}
+                    {task.duration && task.task_type ? <span>·</span> : null}
+                    {task.task_type ? (
+                      <span className="text-zinc-300 font-medium">{task.task_type}</span>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -382,79 +396,102 @@ export const PlanScreen: React.FC = () => {
       <Modal
         isOpen={Boolean(editingTask)}
         onClose={() => setEditingTask(null)}
-        title="Task Details"
-        subtitle={editingTask?.chapter_name || editingTask?.subject_name}
+        title="Edit Task"
+        subtitle="Update task details or reschedule"
       >
         {editingTask && (
           <form onSubmit={handleSaveEdit} className="space-y-4 pt-1">
-            {/* Subject */}
+            {/* 1. Task Name (Prominent & Required) */}
             <div>
-              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                Subject
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['Physics', 'Chemistry', 'Biology'] as SubjectType[]).map(sub => (
-                  <button
-                    key={sub}
-                    type="button"
-                    onClick={() => setEditSubject(sub)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition ${
-                      editSubject === sub
-                        ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
-                        : 'bg-[#18181f] border-white/[0.08] text-zinc-300 hover:text-white'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Chapter */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                Chapter
-              </label>
-              <input
-                type="text"
-                value={editChapter}
-                onChange={e => setEditChapter(e.target.value)}
-                placeholder="e.g. Current Electricity"
-                className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
-              />
-            </div>
-
-            {/* Title */}
-            <div>
-              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                Task Name
+              <label className="block text-xs font-bold text-zinc-300 uppercase tracking-wider mb-1.5">
+                Task Name <span className="text-primary-light">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={editTitle}
                 onChange={e => setEditTitle(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+                placeholder="What do you want to accomplish?"
+                className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white font-medium"
               />
             </div>
 
-            {/* Task Type & Priority */}
+            {/* 2. Subject (Optional) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  Subject
+                </label>
+                <span className="text-[11px] text-zinc-500">Optional</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {(['Physics', 'Chemistry', 'Biology', 'Other'] as const).map(sub => {
+                  const isSelected = editSubject === sub;
+                  return (
+                    <button
+                      key={sub}
+                      type="button"
+                      onClick={() => setEditSubject(isSelected ? null : sub)}
+                      className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition ${
+                        isSelected
+                          ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
+                          : 'bg-[#18181f] border-white/[0.08] text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {sub}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Chapter & Topic (Optional) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Chapter
+                </label>
+                <input
+                  type="text"
+                  value={editChapter}
+                  onChange={e => setEditChapter(e.target.value)}
+                  placeholder="e.g. Electrostatics"
+                  className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Topic
+                </label>
+                <input
+                  type="text"
+                  value={editTopic}
+                  onChange={e => setEditTopic(e.target.value)}
+                  placeholder="e.g. Electric Field"
+                  className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+                />
+              </div>
+            </div>
+
+            {/* 4. Task Type & Priority */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
                   Type
                 </label>
                 <select
-                  value={editTaskType}
-                  onChange={e => setEditTaskType(e.target.value as TaskType)}
+                  value={editTaskType || ''}
+                  onChange={e => setEditTaskType((e.target.value as TaskType) || null)}
                   className="w-full px-3 py-2.5 rounded-xl dark-input text-sm text-white"
                 >
+                  <option value="">None / Optional</option>
+                  <option value="Study">Study</option>
                   <option value="MCQs">MCQs</option>
-                  <option value="NCERT">NCERT</option>
-                  <option value="Notes">Notes</option>
                   <option value="Revision">Revision</option>
-                  <option value="Lecture">Lecture</option>
-                  <option value="Mock Test">Mock Test</option>
+                  <option value="Test">Test</option>
+                  <option value="Habit">Habit</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
 
@@ -474,7 +511,7 @@ export const PlanScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Duration & Date (Reschedule) */}
+            {/* 5. Duration & Date (Reschedule) */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
@@ -482,21 +519,23 @@ export const PlanScreen: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  min="10"
+                  min="5"
                   max="360"
                   step="5"
                   value={editDuration}
-                  onChange={e => setEditDuration(Number(e.target.value))}
+                  onChange={e => setEditDuration(e.target.value)}
+                  placeholder="Optional"
                   className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-                  Date
+                  Date (Reschedule)
                 </label>
                 <input
                   type="date"
+                  required
                   value={editDate}
                   onChange={e => setEditDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
@@ -504,7 +543,21 @@ export const PlanScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Completion Toggle */}
+            {/* 6. Notes */}
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Notes
+              </label>
+              <textarea
+                rows={2}
+                value={editNotes}
+                onChange={e => setEditNotes(e.target.value)}
+                placeholder="Optional notes or instructions..."
+                className="w-full px-3 py-2 rounded-xl dark-input text-xs text-white resize-none"
+              />
+            </div>
+
+            {/* 7. Completion Toggle */}
             <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-[#16161c] border border-white/[0.05]">
               <span className="text-xs font-semibold text-zinc-300">Mark as completed</span>
               <button

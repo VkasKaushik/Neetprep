@@ -753,13 +753,13 @@ export class StorageService {
         id: newTask.id,
         user_id: profile.id,
         date: newTask.date,
-        subject_name: newTask.subject_name,
+        subject_name: newTask.subject_name || null,
         chapter_name: newTask.chapter_name || null,
         topic_name: newTask.topic_name || null,
-        task_type: newTask.task_type,
+        task_type: newTask.task_type || null,
         title: newTask.title,
-        duration: newTask.duration,
-        priority: newTask.priority,
+        duration: newTask.duration || null,
+        priority: newTask.priority || 'Medium',
         completed: newTask.completed,
         completed_at: newTask.completed_at || null
       }).then();
@@ -787,9 +787,10 @@ export class StorageService {
     }
 
     // Also update corresponding chapter's progress if applicable
-    if (tasks[idx].chapter_name && tasks[idx].subject_name) {
+    const sub = tasks[idx].subject_name;
+    if (tasks[idx].chapter_name && (sub === 'Physics' || sub === 'Chemistry' || sub === 'Biology')) {
       this.updateChapterProgressOnTaskToggle(
-        tasks[idx].subject_name,
+        sub,
         tasks[idx].chapter_name!,
         completed
       );

@@ -288,10 +288,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab, onOpe
 
                 <div className="min-w-0 space-y-1.5 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <SubjectBadge subject={currentTask.subject_name} size="sm" />
-                    <span className="text-xs font-medium text-zinc-400 truncate">
-                      {currentTask.chapter_name || currentTask.subject_name}
-                    </span>
+                    {currentTask.subject_name && <SubjectBadge subject={currentTask.subject_name} size="sm" />}
+                    {currentTask.chapter_name && (
+                      <span className="text-xs font-medium text-zinc-400 truncate">
+                        {currentTask.chapter_name}
+                      </span>
+                    )}
 
                     {/* Small "✓ Completed" Confirmation Badge */}
                     {currentTask.completed && (
@@ -310,16 +312,24 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab, onOpe
                     {currentTask.title}
                   </h3>
 
-                  <div className="flex items-center gap-2 text-xs text-zinc-400">
-                    <span className="flex items-center gap-1 font-medium text-zinc-300">
-                      <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                      {currentTask.duration}m
-                    </span>
-                    <span>·</span>
-                    <span className="text-zinc-300 font-medium">{currentTask.task_type}</span>
-                    <span>·</span>
-                    <PriorityBadge priority={currentTask.priority} />
-                  </div>
+                  {(currentTask.duration || currentTask.task_type || currentTask.priority) && (
+                    <div className="flex items-center gap-2 text-xs text-zinc-400">
+                      {currentTask.duration ? (
+                        <span className="flex items-center gap-1 font-medium text-zinc-300">
+                          <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                          {currentTask.duration}m
+                        </span>
+                      ) : null}
+                      {currentTask.duration && currentTask.task_type ? <span>·</span> : null}
+                      {currentTask.task_type ? (
+                        <span className="text-zinc-300 font-medium">{currentTask.task_type}</span>
+                      ) : null}
+                      {(currentTask.duration || currentTask.task_type) && currentTask.priority ? <span>·</span> : null}
+                      {currentTask.priority && (
+                        <PriorityBadge priority={currentTask.priority} />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

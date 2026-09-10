@@ -8,6 +8,7 @@ export type TaskType =
   | 'MCQs'
   | 'Revision'
   | 'Test'
+  | 'Habit'
   | 'Other';
 
 export type PriorityLevel = 'Low' | 'Medium' | 'High';
@@ -64,16 +65,17 @@ export interface Task {
   id: string;
   user_id?: string;
   date: string; // YYYY-MM-DD
-  subject_id: string;
-  subject_name: SubjectType;
+  subject_id?: string;
+  subject_name?: SubjectType | string;
   chapter_id?: string;
   chapter_name?: string;
   topic_id?: string;
   topic_name?: string;
-  task_type: TaskType;
+  task_type?: TaskType;
   title: string;
-  duration: number; // minutes
-  priority: PriorityLevel;
+  duration?: number; // minutes
+  priority?: PriorityLevel;
+  notes?: string;
   completed: boolean;
   completed_at?: string;
   created_at: string;

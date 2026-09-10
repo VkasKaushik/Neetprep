@@ -1,18 +1,20 @@
 import React from 'react';
 import { SubjectType, PriorityLevel } from '../../types';
 
-export const SubjectBadge: React.FC<{ subject: SubjectType; size?: 'sm' | 'md' }> = ({ subject, size = 'sm' }) => {
-  const dotColor = {
+export const SubjectBadge: React.FC<{ subject?: SubjectType | string; size?: 'sm' | 'md' }> = ({ subject, size = 'sm' }) => {
+  if (!subject) return null;
+
+  const dotColor = ({
     Physics: 'bg-[#38bdf8]',
     Chemistry: 'bg-[#c084fc]',
     Biology: 'bg-[#34d399]',
-  }[subject] || 'bg-slate-400';
+  } as Record<string, string>)[subject] || 'bg-slate-400';
 
-  const textColor = {
+  const textColor = ({
     Physics: 'text-[#7dd3fc]',
     Chemistry: 'text-[#e9d5ff]',
     Biology: 'text-[#6ee7b7]',
-  }[subject] || 'text-slate-300';
+  } as Record<string, string>)[subject] || 'text-slate-300';
 
   return (
     <span className={`inline-flex items-center gap-1.5 font-medium rounded-full bg-[#25252c] border border-white/[0.08] ${textColor} ${
