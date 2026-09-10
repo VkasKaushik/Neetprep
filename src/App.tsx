@@ -8,6 +8,7 @@ import { TestsScreen } from './components/tests/TestsScreen';
 import { ProgressScreen } from './components/progress/ProgressScreen';
 import { AuthModal } from './components/auth/AuthModal';
 import { OnboardingModal } from './components/auth/OnboardingModal';
+import { PwaInstallPrompt } from './components/common/PwaInstallPrompt';
 
 export const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => storageService.isLoggedIn());
@@ -90,6 +91,9 @@ export const App: React.FC = () => {
         isOpen={isOnboardingOpen}
         onComplete={() => setIsOnboardingOpen(false)}
       />
+
+      {/* First-visit PWA Installation Prompt */}
+      <PwaInstallPrompt />
     </>
   );
 };
