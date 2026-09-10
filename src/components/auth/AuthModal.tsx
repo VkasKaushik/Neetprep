@@ -165,9 +165,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
       <div className="w-full max-w-md bg-[#16161c] rounded-3xl border border-white/[0.08] p-6 sm:p-8 shadow-2xl relative">
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#22222a] border border-white/[0.08] text-primary-light mb-3">
-            <Sparkles className="w-6 h-6 text-[#8b5cf6]" />
-          </div>
+          <img 
+            src="/pwa-192x192.png" 
+            alt="NEET PREP" 
+            className="w-14 h-14 rounded-2xl object-cover border border-white/[0.08] mx-auto mb-3 shadow-md" 
+          />
           <h2 className="text-2xl font-black text-white tracking-tight">NEET PREP</h2>
           <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-bold">
             Plan · Study · Complete · Review · Improve

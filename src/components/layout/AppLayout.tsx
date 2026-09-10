@@ -95,9 +95,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <div className="space-y-6">
           {/* App Brand */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#202028] border border-white/[0.08] flex items-center justify-center text-primary-light shrink-0">
-              <Sparkles className="w-5 h-5 text-[#8b5cf6]" />
-            </div>
+            <img 
+              src="/favicon.png" 
+              alt="NEET PREP" 
+              className="w-10 h-10 rounded-2xl object-cover border border-white/[0.08] shadow-sm shrink-0" 
+            />
             <div>
               <span className="font-black text-base tracking-tight text-white block">NEET PREP</span>
               <span className="text-[10px] text-zinc-400 font-bold tracking-wider uppercase block">
@@ -179,9 +181,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       {/* MOBILE TOP BAR (Minimalist header) */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/[0.07] bg-[#121216] sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-[#202028] border border-white/[0.08] flex items-center justify-center text-primary-light">
-            <Sparkles className="w-4 h-4 text-[#8b5cf6]" />
-          </div>
+          <img 
+            src="/favicon.png" 
+            alt="NEET PREP" 
+            className="w-8 h-8 rounded-xl object-cover border border-white/[0.08] shrink-0" 
+          />
           <span className="font-black text-sm tracking-tight text-white">NEET PREP</span>
         </div>
 
