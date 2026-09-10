@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Task } from '../../types';
 import { storageService, getTodayDateStr } from '../../services/storageService';
 import { SubjectBadge, PriorityBadge, ProgressBar } from '../common/UIComponents';
@@ -7,7 +7,8 @@ import {
   Check, 
   Clock, 
   ArrowRight,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
 
 interface TodayScreenProps {
@@ -20,6 +21,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
 
   const [tasks, setTasks] = useState<Task[]>(() => storageService.getTasksForDate(todayStr));
   const [isAddTaskOpen, setIsAddTaskOpen] = useState<boolean>(false);
+
+  // Micro-interaction states for smooth task completion transition
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null);
+  const [isExiting, setIsExiting] = useState<boolean>(false);
+
+  const timerRef = useRef<any>(null);
+  const exitTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    };
+  }, []);
 
   // Dynamic countdown to exam
   const daysRemaining = useMemo(() => {
@@ -38,12 +54,23 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
     return 'Good evening';
   }, []);
 
-  // Today stats
+  // Today stats — updates immediately on tap
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.completed).length;
   const uncompletedTasks = tasks.filter(t => !t.completed);
-  const currentTask = uncompletedTasks.length > 0 ? uncompletedTasks[0] : (tasks.length > 0 ? tasks[0] : null);
   const allCompleted = totalTasks > 0 && completedTasks === totalTasks;
+  const todayProgressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  // Determine currentTask:
+  // If a task is pinned during the ~700ms confirmation, keep it visible!
+  // Otherwise, show the first uncompleted task (or first task if all are completed).
+  const currentTask = useMemo(() => {
+    if (pinnedTaskId) {
+      const pinned = tasks.find(t => t.id === pinnedTaskId);
+      if (pinned) return pinned;
+    }
+    return uncompletedTasks.length > 0 ? uncompletedTasks[0] : (tasks.length > 0 ? tasks[0] : null);
+  }, [pinnedTaskId, tasks, uncompletedTasks]);
 
   // Study hours calculation
   const studyMinutes = useMemo(() => {
@@ -66,13 +93,60 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
   const chemProgress = storageService.calculateSubjectProgress('Chemistry');
   const bioProgress = storageService.calculateSubjectProgress('Biology');
 
-  // Toggle Task Completion
+  // Toggle Task Completion with smooth, polished micro-interaction
   const handleToggleTask = (taskId: string) => {
-    const updated = storageService.toggleTaskComplete(taskId);
-    if (updated) {
-      setTasks(prev =>
-        prev.map(t => (t.id === taskId ? { ...t, completed: updated.completed } : t))
-      );
+    const targetTask = tasks.find(t => t.id === taskId);
+    if (!targetTask) return;
+
+    // Prevent duplicate triggers while animating exit
+    if (isExiting) return;
+
+    if (!targetTask.completed) {
+      // 1. Immediately toggle in backend & state -> Progress count & % animate immediately
+      const updated = storageService.toggleTaskComplete(taskId);
+      if (updated) {
+        setTasks(prev =>
+          prev.map(t => (t.id === taskId ? { ...t, completed: true } : t))
+        );
+      }
+
+      // Check if this was the final task
+      const remainingUncompleted = tasks.filter(t => t.id !== taskId && !t.completed);
+      const isFinalTask = remainingUncompleted.length === 0;
+
+      // 2. Animate checkbox bounce & keep task visible with strikethrough & "✓ Completed" badge
+      setCompletingTaskId(taskId);
+      setPinnedTaskId(taskId);
+
+      // 5. If this was the final task, keep completed state visible and show positive message
+      if (isFinalTask) {
+        return;
+      }
+
+      // 4. After ~700ms confirmation, smoothly fade/slide away and reveal the next upcoming task
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+
+      timerRef.current = setTimeout(() => {
+        setIsExiting(true);
+
+        exitTimerRef.current = setTimeout(() => {
+          setIsExiting(false);
+          setCompletingTaskId(null);
+          setPinnedTaskId(null);
+        }, 260); // duration of smooth slide/fade exit
+      }, 680); // keep visible for ~700ms
+    } else {
+      // Unchecking task
+      const updated = storageService.toggleTaskComplete(taskId);
+      if (updated) {
+        setTasks(prev =>
+          prev.map(t => (t.id === taskId ? { ...t, completed: false } : t))
+        );
+      }
+      setCompletingTaskId(null);
+      setPinnedTaskId(null);
+      setIsExiting(false);
     }
   };
 
@@ -120,9 +194,20 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
           <span className="text-[11px] font-bold uppercase tracking-widest text-[#8b5cf6]">
             Today's Plan
           </span>
-          <span className="text-sm font-bold text-zinc-300">
-            {completedTasks} / {totalTasks} completed
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-zinc-300 transition-all duration-300">
+              {completedTasks} / {totalTasks} completed
+            </span>
+            {totalTasks > 0 && (
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-all duration-300 ${
+                allCompleted 
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-white/[0.06] text-zinc-300 border border-white/[0.08]'
+              }`}>
+                {todayProgressPercent}%
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Current / Next Task or Empty State */}
@@ -135,46 +220,75 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
           </div>
         ) : currentTask ? (
           <div className="space-y-2.5">
-            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-              {allCompleted ? 'All tasks finished' : 'Current task'}
+            <div className="text-xs font-semibold uppercase tracking-wider transition-all duration-300">
+              {allCompleted ? (
+                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  All tasks finished for today
+                </span>
+              ) : currentTask.completed ? (
+                <span className="text-purple-300 font-bold">
+                  ✓ Task completed
+                </span>
+              ) : (
+                <span className="text-zinc-400">
+                  Current task
+                </span>
+              )}
             </div>
 
+            {/* Task Card with Smooth Animated Transitions */}
             <div
+              key={currentTask.id}
               onClick={() => handleToggleTask(currentTask.id)}
-              className={`rounded-2xl p-4 border transition-all cursor-pointer flex items-start justify-between gap-3.5 ${
+              className={`rounded-2xl p-4 border cursor-pointer flex items-start justify-between gap-3.5 transition-all duration-300 ease-out ${
+                isExiting
+                  ? 'opacity-0 -translate-y-2 scale-[0.98]'
+                  : 'opacity-100 translate-y-0 scale-100 animate-task-reveal'
+              } ${
                 currentTask.completed
-                  ? 'bg-[#15151a] border-white/[0.04] opacity-70'
+                  ? 'bg-[#15151a] border-white/[0.04]'
                   : 'bg-[#18181f] hover:bg-[#1f1f28] border-white/[0.08] hover:border-white/[0.14]'
               }`}
             >
-              <div className="flex items-start gap-3.5 min-w-0">
-                {/* Large touch-friendly check circle */}
+              <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                {/* Checkbox with Immediate Color Fill & Scale/Bounce Animation */}
                 <button
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
                     handleToggleTask(currentTask.id);
                   }}
-                  className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 border ${
+                  className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0 border transition-all duration-200 ${
                     currentTask.completed
                       ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
                       : 'border-zinc-600 hover:border-primary-light bg-[#121216]'
-                  }`}
+                  } ${completingTaskId === currentTask.id ? 'animate-check-bounce' : ''}`}
                   aria-label={currentTask.completed ? 'Mark incomplete' : 'Mark complete'}
                 >
-                  {currentTask.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  {currentTask.completed && (
+                    <Check className={`w-3.5 h-3.5 stroke-[3] ${completingTaskId === currentTask.id ? 'animate-check-bounce' : ''}`} />
+                  )}
                 </button>
 
-                <div className="min-w-0 space-y-1.5">
+                <div className="min-w-0 space-y-1.5 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <SubjectBadge subject={currentTask.subject_name} size="sm" />
                     <span className="text-xs font-medium text-zinc-400 truncate">
                       {currentTask.chapter_name || currentTask.subject_name}
                     </span>
+
+                    {/* Small "✓ Completed" Confirmation Badge */}
+                    {currentTask.completed && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-300 bg-[#6e3ff5]/20 px-2 py-0.5 rounded-full border border-[#6e3ff5]/30 animate-fade-in">
+                        ✓ Completed
+                      </span>
+                    )}
                   </div>
 
+                  {/* Title with Smooth Strikethrough & Muted State */}
                   <h3
-                    className={`text-sm sm:text-base font-bold tracking-tight ${
+                    className={`text-sm sm:text-base font-bold tracking-tight transition-all duration-300 ${
                       currentTask.completed ? 'line-through text-zinc-500' : 'text-white'
                     }`}
                   >
@@ -195,8 +309,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
               </div>
             </div>
 
+            {/* Positive Completion Message for Final Task */}
+            {allCompleted && totalTasks > 0 && (
+              <div className="p-3.5 rounded-2xl bg-[#6e3ff5]/10 border border-[#6e3ff5]/25 text-xs text-purple-200 flex items-center gap-2.5 animate-fade-in">
+                <div className="w-6 h-6 rounded-full bg-[#6e3ff5]/20 flex items-center justify-center text-[#a78bfa] shrink-0 font-bold">
+                  ✓
+                </div>
+                <span className="font-semibold">
+                  All tasks completed for today! Amazing work keeping your NEET prep streak strong.
+                </span>
+              </div>
+            )}
+
+            {/* Remaining Tasks Count */}
             {totalTasks > 1 && !allCompleted && (
-              <p className="text-[11px] text-zinc-500 text-center pt-0.5 font-medium">
+              <p className="text-[11px] text-zinc-500 text-center pt-0.5 font-medium transition-all duration-300">
                 {totalTasks - completedTasks} {totalTasks - completedTasks === 1 ? 'task' : 'tasks'} remaining today
               </p>
             )}
