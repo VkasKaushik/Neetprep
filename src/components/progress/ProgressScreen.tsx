@@ -9,7 +9,8 @@ import {
   AlertCircle, 
   Sparkles,
   MessageSquare,
-  Flame
+  Flame,
+  BarChart3
 } from 'lucide-react';
 
 export const ProgressScreen: React.FC = () => {
@@ -87,6 +88,43 @@ export const ProgressScreen: React.FC = () => {
       { label: 'Now', value: overallPrep },
     ];
   }, [overallPrep]);
+
+  // Weekly Overview Data (Moved from Plan tab)
+  const currentWeekDays = useMemo(() => {
+    const curr = new Date();
+    const firstDay = curr.getDate() - curr.getDay() + (curr.getDay() === 0 ? -6 : 1);
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    return days.map((dayName, index) => {
+      const d = new Date(curr);
+      d.setDate(firstDay + index);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayTasks = allTasks.filter(t => t.date === dateStr);
+      const dayCompleted = dayTasks.filter(t => t.completed).length;
+      const percent = dayTasks.length > 0 ? Math.round((dayCompleted / dayTasks.length) * 100) : 0;
+      return {
+        day: dayName,
+        dateStr,
+        percent,
+        tasksCount: dayTasks.length,
+        completedCount: dayCompleted
+      };
+    });
+  }, [allTasks]);
+
+  const totalWeeklyTasks = currentWeekDays.reduce((acc, d) => acc + d.tasksCount, 0);
+  const totalWeeklyCompleted = currentWeekDays.reduce((acc, d) => acc + d.completedCount, 0);
+  const weeklyProgressPercent = totalWeeklyTasks > 0 ? Math.round((totalWeeklyCompleted / totalWeeklyTasks) * 100) : 0;
+
+  const weeklyStudyHours = Math.round(
+    allTasks
+      .filter(t => t.completed)
+      .reduce((acc, t) => acc + (t.duration || 0), 0) / 60
+  );
+
+  const weeklyQuestionsSolved = questionStats.total;
+  const weeklyStudyTargetHours = (profile.daily_study_goal || 6) * 7;
+  const weeklyQuestionTarget = (profile.daily_question_goal || 200) * 7;
 
   const handleSaveReflection = (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,7 +317,60 @@ export const ProgressScreen: React.FC = () => {
         )}
       </div>
 
-      {/* 4. GROWTH VELOCITY CHARTS */}
+      {/* 4. WEEKLY OVERVIEW (Moved from Plan tab: performance & completion) */}
+      <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-[#8b5cf6]" />
+            <h2 className="text-xs uppercase tracking-wider font-bold text-white">
+              Weekly Overview
+            </h2>
+          </div>
+          <span className="text-xs font-black text-primary-light">
+            Progress: {weeklyProgressPercent}%
+          </span>
+        </div>
+
+        {/* Daily Bars */}
+        <div className="grid grid-cols-7 gap-1.5 text-center">
+          {currentWeekDays.map(d => (
+            <div key={d.day} className="flex flex-col items-center gap-1.5">
+              <span className="text-[10px] text-zinc-400 font-bold">{d.day}</span>
+              <div className="w-full bg-[#18181e] rounded-full h-16 relative flex flex-col justify-end p-0.5 border border-white/[0.04]">
+                <div
+                  className="w-full bg-[#6e3ff5] rounded-full transition-all duration-500"
+                  style={{ height: `${Math.max(4, d.percent)}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-bold text-zinc-300">{d.percent}%</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Weekly Metrics */}
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/[0.06] text-center">
+          <div className="p-2.5 rounded-2xl bg-[#25252c]">
+            <span className="text-[10px] text-zinc-400 block">Tasks</span>
+            <span className="text-sm font-black text-white">
+              {totalWeeklyCompleted} / {totalWeeklyTasks}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-[#25252c]">
+            <span className="text-[10px] text-zinc-400 block">Study</span>
+            <span className="text-sm font-black text-primary-light">
+              {weeklyStudyHours}h / {weeklyStudyTargetHours}h
+            </span>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-[#25252c]">
+            <span className="text-[10px] text-zinc-400 block">Questions</span>
+            <span className="text-sm font-black text-emerald-400">
+              {weeklyQuestionsSolved} / {weeklyQuestionTarget}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. GROWTH VELOCITY CHARTS */}
       <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">

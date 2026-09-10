@@ -1,16 +1,17 @@
-import React, { useState, useMemo } from 'react';
-import { Task, SubjectType } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Task, SubjectType, PriorityLevel, TaskType } from '../../types';
 import { storageService, getTodayDateStr } from '../../services/storageService';
-import { SubjectBadge, PriorityBadge, ProgressBar, Modal } from '../common/UIComponents';
+import { SubjectBadge, Modal } from '../common/UIComponents';
 import { AddTaskModal } from '../today/AddTaskModal';
 import { 
-  Calendar as CalendarIcon, 
   Plus, 
   Check, 
   Clock, 
-  MoveRight, 
-  Trash2, 
-  BarChart3
+  ChevronLeft, 
+  ChevronRight, 
+  AlertCircle,
+  Trash2,
+  Calendar
 } from 'lucide-react';
 
 export const PlanScreen: React.FC = () => {
@@ -18,53 +19,121 @@ export const PlanScreen: React.FC = () => {
   const today = getTodayDateStr();
 
   const [selectedDate, setSelectedDate] = useState<string>(today);
+  const [viewDate, setViewDate] = useState<Date>(() => new Date());
   const [tasks, setTasks] = useState<Task[]>(() => storageService.getTasks());
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
-  const [movingTask, setMovingTask] = useState<Task | null>(null);
-  const [newMoveDate, setNewMoveDate] = useState<string>(today);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // Generate 14-day horizontal date list around today
-  const dateList = useMemo(() => {
-    const list: { dateStr: string; dayName: string; dayNumber: number; isToday: boolean }[] = [];
-    const base = new Date();
-    base.setDate(base.getDate() - 3);
+  // Edit Task Form State
+  const [editTitle, setEditTitle] = useState('');
+  const [editChapter, setEditChapter] = useState('');
+  const [editSubject, setEditSubject] = useState<SubjectType>('Physics');
+  const [editTaskType, setEditTaskType] = useState<TaskType>('MCQs');
+  const [editDuration, setEditDuration] = useState<number>(60);
+  const [editDate, setEditDate] = useState<string>(today);
+  const [editPriority, setEditPriority] = useState<PriorityLevel>('Medium');
+  const [editCompleted, setEditCompleted] = useState<boolean>(false);
 
-    for (let i = 0; i < 14; i++) {
-      const current = new Date(base);
-      current.setDate(base.getDate() + i);
-      const str = current.toISOString().split('T')[0];
+  // Populate edit form when a task is selected
+  useEffect(() => {
+    if (editingTask) {
+      setEditTitle(editingTask.title);
+      setEditChapter(editingTask.chapter_name || '');
+      setEditSubject(editingTask.subject_name);
+      setEditTaskType(editingTask.task_type);
+      setEditDuration(editingTask.duration);
+      setEditDate(editingTask.date);
+      setEditPriority(editingTask.priority);
+      setEditCompleted(editingTask.completed);
+    }
+  }, [editingTask]);
+
+  // Month navigation: title formatted as Month Year
+  const monthYearTitle = useMemo(() => {
+    return viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [viewDate]);
+
+  // 7-day strip (Monday - Sunday) centered on viewDate
+  const weekDays = useMemo(() => {
+    const d = new Date(viewDate);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    const monday = new Date(d);
+    monday.setDate(diff);
+
+    const list: {
+      dateStr: string;
+      dayName: string;
+      dayNumber: number;
+      isToday: boolean;
+      hasTasks: boolean;
+    }[] = [];
+
+    for (let i = 0; i < 7; i++) {
+      const current = new Date(monday);
+      current.setDate(monday.getDate() + i);
+      const dateStr = current.toISOString().split('T')[0];
       const dayName = current.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNumber = current.getDate();
+      const hasTasks = tasks.some(t => t.date === dateStr);
       list.push({
-        dateStr: str,
+        dateStr,
         dayName,
         dayNumber,
-        isToday: str === today
+        isToday: dateStr === today,
+        hasTasks
       });
     }
     return list;
-  }, [today]);
+  }, [viewDate, tasks, today]);
 
+  // Navigate weeks
+  const handlePrevWeek = () => {
+    setViewDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 7);
+      return d;
+    });
+  };
+
+  const handleNextWeek = () => {
+    setViewDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 7);
+      return d;
+    });
+  };
+
+  const handleGoToday = () => {
+    const now = new Date();
+    setViewDate(now);
+    setSelectedDate(today);
+  };
+
+  // Day calculations
   const selectedDayTasks = useMemo(() => {
     return tasks.filter(t => t.date === selectedDate);
   }, [tasks, selectedDate]);
 
-  const completedCount = selectedDayTasks.filter(t => t.completed).length;
   const plannedCount = selectedDayTasks.length;
+  const completedCount = selectedDayTasks.filter(t => t.completed).length;
 
-  const selectedDayMinutes = selectedDayTasks
-    .filter(t => t.completed)
-    .reduce((acc, t) => acc + (t.duration || 0), 0);
-  const completedHoursDisplay = `${Math.floor(selectedDayMinutes / 60)}h ${selectedDayMinutes % 60}m`;
-  const goalHoursDisplay = `${profile.daily_study_goal || 6}h`;
+  const plannedMinutes = useMemo(() => {
+    return selectedDayTasks.reduce((acc, t) => acc + (t.duration || 0), 0);
+  }, [selectedDayTasks]);
 
-  const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-  const formattedDayTitle = selectedDateObj.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric'
-  });
+  const plannedHoursDisplay = useMemo(() => {
+    const h = Math.floor(plannedMinutes / 60);
+    const m = plannedMinutes % 60;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  }, [plannedMinutes]);
 
+  const targetHours = profile.daily_study_goal || 8;
+  const plannedHoursNum = Math.round((plannedMinutes / 60) * 10) / 10;
+  const overHours = Math.round((plannedHoursNum - targetHours) * 10) / 10;
+
+  // Toggle completion
   const handleToggleTask = (taskId: string) => {
     const updated = storageService.toggleTaskComplete(taskId);
     if (updated) {
@@ -72,117 +141,120 @@ export const PlanScreen: React.FC = () => {
     }
   };
 
+  // Add task
   const handleAddTask = (newTaskData: any) => {
     storageService.addTask(newTaskData);
     setTasks(storageService.getTasks());
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    storageService.deleteTask(taskId);
+  // Save edited task
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+
+    storageService.updateTask(editingTask.id, {
+      title: editTitle.trim() || editingTask.title,
+      chapter_name: editChapter.trim() || undefined,
+      subject_name: editSubject,
+      subject_id: editSubject,
+      task_type: editTaskType,
+      duration: Number(editDuration) || 60,
+      date: editDate,
+      priority: editPriority,
+      completed: editCompleted
+    });
+
     setTasks(storageService.getTasks());
+    setEditingTask(null);
   };
 
-  const handleConfirmMove = () => {
-    if (movingTask && newMoveDate) {
-      storageService.updateTask(movingTask.id, { date: newMoveDate });
+  // Delete task
+  const handleDeleteTask = (taskId: string) => {
+    if (window.confirm('Delete this study task?')) {
+      storageService.deleteTask(taskId);
       setTasks(storageService.getTasks());
-      setMovingTask(null);
+      setEditingTask(null);
     }
   };
 
-  const currentWeekDays = useMemo(() => {
-    const curr = new Date();
-    const firstDay = curr.getDate() - curr.getDay() + (curr.getDay() === 0 ? -6 : 1);
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-    return days.map((dayName, index) => {
-      const d = new Date(curr);
-      d.setDate(firstDay + index);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayTasks = tasks.filter(t => t.date === dateStr);
-      const dayCompleted = dayTasks.filter(t => t.completed).length;
-      const percent = dayTasks.length > 0 ? Math.round((dayCompleted / dayTasks.length) * 100) : 0;
-      return {
-        day: dayName,
-        dateStr,
-        percent,
-        tasksCount: dayTasks.length,
-        completedCount: dayCompleted
-      };
-    });
-  }, [tasks]);
-
-  const totalWeeklyTasks = currentWeekDays.reduce((acc, d) => acc + d.tasksCount, 0);
-  const totalWeeklyCompleted = currentWeekDays.reduce((acc, d) => acc + d.completedCount, 0);
-  const weeklyProgressPercent = totalWeeklyTasks > 0 ? Math.round((totalWeeklyCompleted / totalWeeklyTasks) * 100) : 0;
-
-  const weeklyStudyHours = Math.round(
-    tasks
-      .filter(t => t.completed)
-      .reduce((acc, t) => acc + (t.duration || 0), 0) / 60
-  );
-
-  const weeklyQuestionsSolved = storageService.getTotalQuestionsSolved().total;
-  const weeklyStudyTargetHours = (profile.daily_study_goal || 6) * 7;
-  const weeklyQuestionTarget = (profile.daily_question_goal || 200) * 7;
-
   return (
-    <div className="space-y-6 pb-28 md:pb-10 max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 pb-24 md:pb-12 max-w-xl mx-auto px-1 sm:px-0">
+      {/* 1. HEADER & ONE PRIMARY ACTION */}
+      <div className="flex items-center justify-between pt-1">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Plan</h1>
-          <p className="text-xs text-zinc-400 mt-0.5">Schedule tasks, protect study blocks, review weekly progress</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Plan</h1>
+          <p className="text-xs text-zinc-400 mt-0.5">What am I going to study?</p>
         </div>
+
         <button
           onClick={() => setIsAddTaskOpen(true)}
-          className="btn-primary py-2 px-4 text-xs font-bold flex items-center gap-1.5 shadow-btn"
+          className="btn-primary py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-btn transition active:scale-98 shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
-          Plan Task
+          + Plan Task
         </button>
       </div>
 
-      {/* Horizontal Date Selector (Matching Reference Pill Row) */}
-      <div className="dark-card rounded-3xl p-4 border border-white/[0.08]">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 flex items-center gap-1.5">
-            <CalendarIcon className="w-3.5 h-3.5 text-[#8b5cf6]" />
-            Select Day
-          </span>
-          <button
-            onClick={() => setSelectedDate(today)}
-            className="text-xs text-primary-light hover:underline font-bold"
-          >
-            Today
-          </button>
+      {/* 2. COMPACT DATE SELECTOR WITH MONTH NAVIGATION */}
+      <div className="bg-[#141419] rounded-2xl p-3 border border-white/[0.07] space-y-2.5">
+        {/* Month bar */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePrevWeek}
+              className="w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 flex items-center justify-center transition active:scale-95"
+              aria-label="Previous week"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-bold text-white px-1.5">
+              {monthYearTitle}
+            </span>
+            <button
+              onClick={handleNextWeek}
+              className="w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 flex items-center justify-center transition active:scale-95"
+              aria-label="Next week"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {selectedDate !== today && (
+            <button
+              onClick={handleGoToday}
+              className="text-[11px] font-bold text-[#a78bfa] hover:text-white px-2.5 py-1 rounded-full bg-[#6e3ff5]/15 border border-[#6e3ff5]/30 transition active:scale-95"
+            >
+              Jump to Today
+            </button>
+          )}
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scroll-smooth">
-          {dateList.map(item => {
+        {/* Compact Horizontal Date Strip */}
+        <div className="grid grid-cols-7 gap-1.5">
+          {weekDays.map(item => {
             const isSelected = item.dateStr === selectedDate;
-            const tasksOnThisDay = tasks.filter(t => t.date === item.dateStr);
-
             return (
               <button
                 key={item.dateStr}
                 onClick={() => setSelectedDate(item.dateStr)}
-                className={`flex-shrink-0 flex flex-col items-center justify-center w-14 py-2.5 rounded-2xl border transition-all duration-150 ${
+                className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all ${
                   isSelected
-                    ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-btn'
-                    : 'border-white/[0.07] bg-[#222228] text-zinc-400 hover:text-white'
+                    ? 'bg-[#6e3ff5] text-white shadow-btn'
+                    : item.isToday
+                    ? 'bg-[#202028] text-zinc-200 border border-[#6e3ff5]/40 hover:border-[#6e3ff5]'
+                    : 'bg-[#18181f] text-zinc-400 hover:text-white border border-white/[0.03]'
                 }`}
               >
-                <span className="text-[10px] font-bold uppercase">{item.dayName}</span>
-                <span className={`text-base font-black my-0.5 ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
+                <span className="text-[10px] font-semibold uppercase tracking-wider">{item.dayName}</span>
+                <span className={`text-sm sm:text-base font-bold my-0.5 ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
                   {item.dayNumber}
                 </span>
                 {item.isToday ? (
-                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-[#6e3ff5]'}`}></span>
-                ) : tasksOnThisDay.length > 0 ? (
-                  <span className="w-1 h-1 rounded-full bg-zinc-500"></span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-[#8b5cf6]'}`} />
+                ) : item.hasTasks ? (
+                  <span className="w-1 h-1 rounded-full bg-zinc-500" />
                 ) : (
-                  <span className="w-1 h-1 opacity-0">.</span>
+                  <span className="w-1 h-1 opacity-0" />
                 )}
               </button>
             );
@@ -190,163 +262,115 @@ export const PlanScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Selected Day Stats Card */}
-      <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-white/[0.07]">
-          <div>
-            <span className="text-xs font-bold text-primary-light uppercase tracking-wider">
-              {selectedDate === today ? 'Today · ' : ''}{formattedDayTitle}
-            </span>
-            <div className="text-lg font-black text-white tracking-tight mt-0.5">
-              {plannedCount} tasks planned · {completedCount} completed
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <div className="px-3 py-1.5 rounded-full bg-[#25252c] border border-white/[0.07]">
-              <span className="text-zinc-400 text-[10px] mr-1">Study:</span>
-              <span className="font-black text-white">{completedHoursDisplay} / {goalHoursDisplay}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-full bg-[#25252c] border border-white/[0.07]">
-              <span className="text-zinc-400 text-[10px] mr-1">Target:</span>
-              <span className="font-black text-emerald-400">{profile.daily_question_goal || 200} Qs</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tasks List */}
-        <div className="space-y-2.5">
-          {selectedDayTasks.length === 0 ? (
-            <div className="text-center py-8 space-y-2">
-              <p className="text-sm font-bold text-white">No tasks scheduled for this day.</p>
-              <p className="text-xs text-zinc-400">Plan ahead to maintain your streak and avoid cramming.</p>
-              <button
-                onClick={() => setIsAddTaskOpen(true)}
-                className="btn-primary py-2 px-4 text-xs font-bold inline-flex items-center gap-1.5 mt-2"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Study Task
-              </button>
-            </div>
-          ) : (
-            selectedDayTasks.map(task => (
-              <div
-                key={task.id}
-                className={`dark-card rounded-2xl p-3.5 border transition-all flex items-center justify-between gap-3 ${
-                  task.completed ? 'border-white/[0.04] opacity-65 bg-[#1a1a20]' : 'border-white/[0.08]'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTask(task.id)}
-                    className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition ${
-                      task.completed
-                        ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white'
-                        : 'border-zinc-600 bg-[#18181e]'
-                    }`}
-                  >
-                    {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <SubjectBadge subject={task.subject_name} size="sm" />
-                      <span className="text-xs text-zinc-400 truncate">{task.chapter_name}</span>
-                    </div>
-                    <p className={`text-sm font-semibold mt-0.5 truncate ${task.completed ? 'line-through text-zinc-500' : 'text-white'}`}>
-                      {task.title}
-                    </p>
-                    <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-0.5">
-                      <span>{task.duration}m</span>
-                      <span>·</span>
-                      <span>{task.task_type}</span>
-                      <span>·</span>
-                      <PriorityBadge priority={task.priority} />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMovingTask(task);
-                      setNewMoveDate(task.date);
-                    }}
-                    className="w-8 h-8 rounded-full bg-[#1c1c22] text-zinc-400 hover:text-white flex items-center justify-center transition"
-                    title="Move to another date"
-                  >
-                    <MoveRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTask(task.id)}
-                    className="w-8 h-8 rounded-full bg-[#1c1c22] text-zinc-400 hover:text-rose-400 flex items-center justify-center transition"
-                    title="Delete task"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* WEEKLY OVERVIEW (Minimalist Dark Card) */}
-      <div className="dark-card rounded-3xl p-5 border border-white/[0.08] space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-[#8b5cf6]" />
-            <h2 className="text-xs uppercase tracking-wider font-bold text-white">
-              Weekly Overview
-            </h2>
-          </div>
-          <span className="text-xs font-black text-primary-light">
-            Progress: {weeklyProgressPercent}%
+      {/* 3. SIMPLIFIED DAILY SUMMARY & WORKLOAD CHECK */}
+      <div className="bg-[#141419] rounded-2xl p-3.5 border border-white/[0.07] space-y-2">
+        <div className="flex items-center justify-between text-xs sm:text-sm">
+          <span className="font-bold text-white">
+            {plannedCount} tasks · {completedCount} completed
+          </span>
+          <span className="font-medium text-zinc-400">
+            {plannedHoursDisplay} planned · {targetHours}h target
           </span>
         </div>
 
-        {/* Daily Bars */}
-        <div className="grid grid-cols-7 gap-1.5 text-center">
-          {currentWeekDays.map(d => (
-            <div key={d.day} className="flex flex-col items-center gap-1.5">
-              <span className="text-[10px] text-zinc-400 font-bold">{d.day}</span>
-              <div className="w-full bg-[#18181e] rounded-full h-16 relative flex flex-col justify-end p-0.5 border border-white/[0.04]">
-                <div
-                  className="w-full bg-[#6e3ff5] rounded-full transition-all duration-500"
-                  style={{ height: `${Math.max(4, d.percent)}%` }}
-                />
-              </div>
-              <span className="text-[10px] font-bold text-zinc-300">{d.percent}%</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Weekly Metrics */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/[0.06] text-center">
-          <div className="p-2.5 rounded-2xl bg-[#25252c]">
-            <span className="text-[10px] text-zinc-400 block">Tasks</span>
-            <span className="text-sm font-black text-white">
-              {totalWeeklyCompleted} / {totalWeeklyTasks}
-            </span>
+        {/* Subtle Overload Warning if Planned Time Exceeds Target */}
+        {overHours > 0 && (
+          <div className="flex items-center gap-2 pt-1 text-xs text-amber-300 font-medium">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>You're planning {overHours}h over your daily target.</span>
           </div>
-          <div className="p-2.5 rounded-2xl bg-[#25252c]">
-            <span className="text-[10px] text-zinc-400 block">Study</span>
-            <span className="text-sm font-black text-primary-light">
-              {weeklyStudyHours}h / {weeklyStudyTargetHours}h
-            </span>
-          </div>
-          <div className="p-2.5 rounded-2xl bg-[#25252c]">
-            <span className="text-[10px] text-zinc-400 block">Questions</span>
-            <span className="text-sm font-black text-emerald-400">
-              {weeklyQuestionsSolved} / {weeklyQuestionTarget}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Add Task Modal */}
+      {/* 4. TASK LIST — Main Focus */}
+      <div className="space-y-2.5">
+        {selectedDayTasks.length === 0 ? (
+          <div className="text-center py-10 px-4 space-y-3 rounded-2xl bg-[#141419] border border-white/[0.05]">
+            <p className="text-sm font-bold text-white">No tasks planned for this day</p>
+            <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+              Keep your NEET prep consistent by scheduling a focused study block.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsAddTaskOpen(true)}
+              className="btn-primary py-2 px-4 text-xs font-bold inline-flex items-center gap-1.5 rounded-xl shadow-btn mt-1"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              + Plan Task
+            </button>
+          </div>
+        ) : (
+          selectedDayTasks.map(task => (
+            <div
+              key={task.id}
+              onClick={() => setEditingTask(task)}
+              className={`rounded-2xl p-3.5 border transition cursor-pointer flex items-start gap-3.5 active:scale-[0.99] ${
+                task.completed
+                  ? 'bg-[#15151a] border-white/[0.04] opacity-60'
+                  : 'bg-[#18181f] hover:bg-[#1e1e27] border-white/[0.07] hover:border-white/[0.12]'
+              }`}
+            >
+              {/* [checkbox] One-tap Completion */}
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  handleToggleTask(task.id);
+                }}
+                className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center transition shrink-0 border ${
+                  task.completed
+                    ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
+                    : 'border-zinc-600 hover:border-primary-light bg-[#121216]'
+                }`}
+                aria-label={task.completed ? 'Mark incomplete' : 'Mark complete'}
+              >
+                {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
+              </button>
+
+              {/* Task Content */}
+              <div className="min-w-0 flex-1 space-y-1">
+                {/* Subject and Meaningful Priority (High only) */}
+                <div className="flex items-center gap-2">
+                  <SubjectBadge subject={task.subject_name} size="sm" />
+                  {task.priority === 'High' && !task.completed && (
+                    <span className="text-[10px] font-semibold text-rose-400 bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20">
+                      High
+                    </span>
+                  )}
+                </div>
+
+                {/* Chapter / task name */}
+                <div>
+                  {task.chapter_name && (
+                    <p className="text-xs text-zinc-400 font-medium truncate">
+                      {task.chapter_name}
+                    </p>
+                  )}
+                  <h3
+                    className={`text-sm font-semibold tracking-tight truncate ${
+                      task.completed ? 'line-through text-zinc-500' : 'text-white'
+                    }`}
+                  >
+                    {task.title}
+                  </h3>
+                </div>
+
+                {/* Duration · Task type */}
+                <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                  <span className="flex items-center gap-1 text-zinc-300 font-medium">
+                    <Clock className="w-3 h-3 text-zinc-500" />
+                    {task.duration}m
+                  </span>
+                  <span>·</span>
+                  <span className="text-zinc-300 font-medium">{task.task_type}</span>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 5. ADD TASK MODAL */}
       <AddTaskModal
         isOpen={isAddTaskOpen}
         onClose={() => setIsAddTaskOpen(false)}
@@ -354,41 +378,177 @@ export const PlanScreen: React.FC = () => {
         defaultDate={selectedDate}
       />
 
-      {/* Move Task Modal */}
+      {/* 6. TASK DETAILS / EDIT MODAL (Opened on task tap) */}
       <Modal
-        isOpen={Boolean(movingTask)}
-        onClose={() => setMovingTask(null)}
-        title="Reschedule Task"
-        subtitle={movingTask?.title}
+        isOpen={Boolean(editingTask)}
+        onClose={() => setEditingTask(null)}
+        title="Task Details"
+        subtitle={editingTask?.chapter_name || editingTask?.subject_name}
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
-              Move to New Date
-            </label>
-            <input
-              type="date"
-              value={newMoveDate}
-              onChange={e => setNewMoveDate(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl dark-input text-sm text-white"
-            />
-          </div>
+        {editingTask && (
+          <form onSubmit={handleSaveEdit} className="space-y-4 pt-1">
+            {/* Subject */}
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Subject
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['Physics', 'Chemistry', 'Biology'] as SubjectType[]).map(sub => (
+                  <button
+                    key={sub}
+                    type="button"
+                    onClick={() => setEditSubject(sub)}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition ${
+                      editSubject === sub
+                        ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
+                        : 'bg-[#18181f] border-white/[0.08] text-zinc-300 hover:text-white'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={() => setMovingTask(null)}
-              className="flex-1 py-2.5 rounded-full bg-[#25252c] text-xs font-bold text-zinc-300 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirmMove}
-              className="flex-1 py-2.5 rounded-full btn-primary text-xs font-bold"
-            >
-              Move Task
-            </button>
-          </div>
-        </div>
+            {/* Chapter */}
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Chapter
+              </label>
+              <input
+                type="text"
+                value={editChapter}
+                onChange={e => setEditChapter(e.target.value)}
+                placeholder="e.g. Current Electricity"
+                className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+              />
+            </div>
+
+            {/* Title */}
+            <div>
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Task Name
+              </label>
+              <input
+                type="text"
+                required
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+              />
+            </div>
+
+            {/* Task Type & Priority */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Type
+                </label>
+                <select
+                  value={editTaskType}
+                  onChange={e => setEditTaskType(e.target.value as TaskType)}
+                  className="w-full px-3 py-2.5 rounded-xl dark-input text-sm text-white"
+                >
+                  <option value="MCQs">MCQs</option>
+                  <option value="NCERT">NCERT</option>
+                  <option value="Notes">Notes</option>
+                  <option value="Revision">Revision</option>
+                  <option value="Lecture">Lecture</option>
+                  <option value="Mock Test">Mock Test</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Priority
+                </label>
+                <select
+                  value={editPriority}
+                  onChange={e => setEditPriority(e.target.value as PriorityLevel)}
+                  className="w-full px-3 py-2.5 rounded-xl dark-input text-sm text-white"
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Duration & Date (Reschedule) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Duration (mins)
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="360"
+                  step="5"
+                  value={editDuration}
+                  onChange={e => setEditDuration(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={e => setEditDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl dark-input text-sm text-white"
+                />
+              </div>
+            </div>
+
+            {/* Completion Toggle */}
+            <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-[#16161c] border border-white/[0.05]">
+              <span className="text-xs font-semibold text-zinc-300">Mark as completed</span>
+              <button
+                type="button"
+                onClick={() => setEditCompleted(!editCompleted)}
+                className={`w-6 h-6 rounded-full flex items-center justify-center transition border ${
+                  editCompleted
+                    ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white'
+                    : 'border-zinc-600 bg-[#121216]'
+                }`}
+              >
+                {editCompleted && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.07]">
+              <button
+                type="button"
+                onClick={() => handleDeleteTask(editingTask.id)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 flex items-center gap-1.5 transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Task
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTask(null)}
+                  className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-xs font-bold text-zinc-300 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary px-5 py-2 rounded-xl text-xs font-bold shadow-btn transition"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
