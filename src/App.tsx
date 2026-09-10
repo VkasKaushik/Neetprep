@@ -12,7 +12,9 @@ import { PwaInstallPrompt } from './components/common/PwaInstallPrompt';
 
 export const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => storageService.isLoggedIn());
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
+    return storageService.isLoggedIn() && !storageService.isOnboardingCompleted();
+  });
   const [activeTab, setActiveTab] = useState<'today' | 'plan' | 'tests' | 'progress'>('today');
 
   useEffect(() => {
@@ -22,7 +24,12 @@ export const App: React.FC = () => {
         if (session?.user) {
           setIsLoggedIn(true);
           storageService.setLoggedIn(true);
-          storageService.syncFromSupabase();
+          storageService.syncFromSupabase().then(() => {
+            // Check if synced profile has onboarding completed
+            if (!storageService.isOnboardingCompleted()) {
+              setIsOnboardingOpen(true);
+            }
+          });
         }
       });
 
@@ -31,9 +38,13 @@ export const App: React.FC = () => {
           setIsLoggedIn(true);
           storageService.setLoggedIn(true);
           await storageService.syncFromSupabase();
+          if (!storageService.isOnboardingCompleted()) {
+            setIsOnboardingOpen(true);
+          }
         } else if (event === 'SIGNED_OUT') {
           setIsLoggedIn(false);
           storageService.setLoggedIn(false);
+          setIsOnboardingOpen(false);
         }
       });
 
@@ -53,11 +64,30 @@ export const App: React.FC = () => {
     }
     storageService.setLoggedIn(false);
     setIsLoggedIn(false);
+    setIsOnboardingOpen(false);
   };
 
   const handleAuthSuccess = async () => {
     setIsLoggedIn(true);
     await storageService.syncFromSupabase();
+    if (!storageService.isOnboardingCompleted()) {
+      setIsOnboardingOpen(true);
+    } else {
+      setIsOnboardingOpen(false);
+      setActiveTab('today');
+    }
+  };
+
+  const handleOpenOnboarding = () => {
+    setIsLoggedIn(true);
+    setIsOnboardingOpen(true);
+  };
+
+  const handleOnboardingComplete = (destinationTab?: 'today' | 'plan') => {
+    setIsOnboardingOpen(false);
+    if (destinationTab) {
+      setActiveTab(destinationTab);
+    }
   };
 
   return (
@@ -78,18 +108,15 @@ export const App: React.FC = () => {
           <AuthModal
             isOpen={!isLoggedIn}
             onSuccess={handleAuthSuccess}
-            onOpenOnboarding={() => {
-              setIsLoggedIn(true);
-              setIsOnboardingOpen(true);
-            }}
+            onOpenOnboarding={handleOpenOnboarding}
           />
         </div>
       )}
 
-      {/* Onboarding Flow */}
+      {/* Onboarding Flow (Progressive Disclosure) */}
       <OnboardingModal
-        isOpen={isOnboardingOpen}
-        onComplete={() => setIsOnboardingOpen(false)}
+        isOpen={isLoggedIn && isOnboardingOpen}
+        onComplete={handleOnboardingComplete}
       />
 
       {/* First-visit PWA Installation Prompt */}

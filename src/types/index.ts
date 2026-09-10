@@ -21,6 +21,8 @@ export interface UserProfile {
   daily_study_goal: number; // hours (e.g. 6)
   daily_question_goal: number; // questions (e.g. 200)
   created_at: string;
+  onboarding_completed?: boolean;
+  onboarding_step?: number;
 }
 
 export interface Subject {

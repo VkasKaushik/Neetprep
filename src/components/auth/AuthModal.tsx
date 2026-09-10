@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { storageService } from '../../services/storageService';
 import { supabase } from '../../lib/supabase';
-import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, LogIn, Compass, Loader2 } from 'lucide-react';
+import { User, Mail, Lock, ArrowRight, Loader2, Compass } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,43 +9,48 @@ interface AuthModalProps {
   onOpenOnboarding: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenOnboarding }) => {
-  const [mode, setMode] = useState<'welcome' | 'signup' | 'login' | 'forgot'>('welcome');
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onSuccess,
+  onOpenOnboarding
+}) => {
+  const [view, setView] = useState<'welcome' | 'signup' | 'signin'>('welcome');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // email or mobile
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
+  // Handles Sign Up
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setInfo('');
 
-    if (!name.trim() || !email.trim() || !password) {
-      setError('Please fill in all required fields.');
+    if (!name.trim()) {
+      setError('Please enter your full name.');
       return;
     }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+    if (!identifier.trim()) {
+      setError('Please enter your email or mobile number.');
       return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (!password || password.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
     setLoading(true);
 
+    const emailValue = identifier.includes('@')
+      ? identifier.trim()
+      : `${identifier.replace(/\D/g, '')}@neetup.local`;
+
     if (supabase) {
       try {
         const { data, error: authError } = await supabase.auth.signUp({
-          email: email.trim(),
+          email: emailValue,
           password,
           options: {
             data: {
@@ -55,51 +60,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
         });
 
         if (authError) {
+          // If already registered, offer sign in
+          if (authError.message.toLowerCase().includes('already registered')) {
+            setError('This account already exists. Please sign in instead.');
+            setLoading(false);
+            return;
+          }
           setError(authError.message);
           setLoading(false);
           return;
         }
 
         if (data?.user) {
-          storageService.createCleanAccount(name.trim(), email.trim(), data.user.id);
-          
-          if (!data.session && !data.user.confirmed_at) {
-            setInfo('Account created! If verification is enabled, please verify via your email or log in.');
-          }
-
+          storageService.createCleanAccount(name.trim(), emailValue, data.user.id);
+          storageService.setOnboardingCompleted(false);
+          storageService.setOnboardingStep(1);
           setLoading(false);
           onOpenOnboarding();
           return;
         }
       } catch (err: any) {
-        setError(err?.message || 'Authentication failed. Please try again.');
+        setError(err?.message || 'Failed to create account.');
         setLoading(false);
         return;
       }
     }
 
-    // Automatic seamless fallback
-    storageService.createCleanAccount(name.trim(), email.trim());
+    // Local account creation fallback
+    storageService.createCleanAccount(name.trim(), emailValue);
+    storageService.setOnboardingCompleted(false);
+    storageService.setOnboardingStep(1);
     setLoading(false);
     onOpenOnboarding();
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // Handles Sign In
+  const handleSignin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setInfo('');
 
-    if (!email.trim() || !password) {
-      setError('Please enter your email and password.');
+    if (!identifier.trim() || !password) {
+      setError('Please enter your email/mobile and password.');
       return;
     }
 
     setLoading(true);
 
+    const emailValue = identifier.includes('@')
+      ? identifier.trim()
+      : `${identifier.replace(/\D/g, '')}@neetup.local`;
+
     if (supabase) {
       try {
         const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: emailValue,
           password
         });
 
@@ -111,332 +125,309 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
 
         if (data?.user) {
           const userName = data.user.user_metadata?.name || 'Aspirant';
-          storageService.createCleanAccount(userName, data.user.email || email.trim(), data.user.id);
+          storageService.createCleanAccount(userName, data.user.email || emailValue, data.user.id);
           storageService.setLoggedIn(true);
           await storageService.syncFromSupabase();
+
           setLoading(false);
-          onSuccess();
+          if (storageService.isOnboardingCompleted()) {
+            onSuccess();
+          } else {
+            onOpenOnboarding();
+          }
           return;
         }
       } catch (err: any) {
-        setError(err?.message || 'Login failed. Please check your credentials.');
+        setError(err?.message || 'Sign in failed. Check your credentials.');
         setLoading(false);
         return;
       }
     }
 
-    const existing = storageService.getProfile();
-    if (!existing.email) {
-      storageService.createCleanAccount(name.trim() || 'Aspirant', email.trim());
-    } else {
-      storageService.setLoggedIn(true);
-    }
+    // Local fallback sign in
+    storageService.setLoggedIn(true);
     setLoading(false);
-    onSuccess();
+
+    if (storageService.isOnboardingCompleted()) {
+      onSuccess();
+    } else {
+      onOpenOnboarding();
+    }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) {
-      setError('Please enter your registered email address.');
-      return;
-    }
-    setLoading(true);
-    if (supabase) {
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim());
-      if (resetErr) {
-        setError(resetErr.message);
-      } else {
-        setInfo('Password reset link has been dispatched to your email.');
-      }
-    } else {
-      setInfo('Password reset requested. Check your email inbox.');
-    }
-    setLoading(false);
-  };
-
+  // Sample Preview exploration
   const handleDemoAccess = () => {
     storageService.loadDemoData();
     onSuccess();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="w-full max-w-md bg-[#16161c] rounded-3xl border border-white/[0.08] p-6 sm:p-8 shadow-2xl relative">
-        {/* Brand Header */}
-        <div className="text-center mb-6">
-          <img 
-            src="/pwa-192x192.png" 
-            alt="NEET PREP" 
-            className="w-14 h-14 rounded-2xl object-cover border border-white/[0.08] mx-auto mb-3 shadow-md" 
-          />
-          <h2 className="text-2xl font-black text-white tracking-tight">NEET PREP</h2>
-          <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-bold">
-            Plan · Study · Complete · Review · Improve
-          </p>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+      <div className="w-full max-w-md bg-[#121216] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        {/* Subtle background glow */}
+        <div className="absolute top-0 right-0 w-48 h-48 bg-[#6e3ff5]/15 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
 
-        {error && (
-          <div className="mb-4 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-center font-bold">
-            {error}
-          </div>
-        )}
+        {/* ======================================================= */}
+        {/* VIEW 1: WELCOME / ENTRY SCREEN                          */}
+        {/* ======================================================= */}
+        {view === 'welcome' && (
+          <div className="space-y-6 text-center py-4">
+            {/* Logo */}
+            <div className="flex justify-center">
+              <div className="relative">
+                <img
+                  src="/favicon.png"
+                  alt="NEETUp"
+                  className="w-20 h-20 rounded-3xl object-cover border border-white/10 shadow-xl"
+                />
+                <div className="absolute inset-0 rounded-3xl bg-[#6e3ff5]/20 blur-md pointer-events-none -z-10" />
+              </div>
+            </div>
 
-        {info && (
-          <div className="mb-4 p-3 rounded-2xl bg-[#6e3ff5]/15 border border-[#6e3ff5]/40 text-purple-200 text-xs text-center font-medium leading-relaxed">
-            {info}
-          </div>
-        )}
+            <div className="space-y-2">
+              <h1 className="text-3xl font-black text-white tracking-tight">NEETUp</h1>
+              <p className="text-sm font-medium text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                Your personal NEET preparation command center.
+              </p>
+            </div>
 
-        {/* WELCOME VIEW */}
-        {mode === 'welcome' && (
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-300 text-center leading-relaxed">
-              Your personal NEET preparation command center. Know exactly what to study today, solve questions fast, and master high-yield topics.
-            </p>
-
-            <div className="pt-2 space-y-2.5">
+            {/* CTAs */}
+            <div className="space-y-3 pt-4">
               <button
-                onClick={() => { setError(''); setMode('signup'); }}
-                className="w-full py-3.5 px-4 rounded-full btn-primary text-sm font-bold flex items-center justify-center gap-2 shadow-btn"
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setView('signup');
+                }}
+                className="w-full py-3.5 px-6 rounded-full btn-primary text-sm font-bold transition shadow-btn flex items-center justify-center gap-2"
               >
-                Create Account
+                Get Started
                 <ArrowRight className="w-4 h-4 stroke-[2.5]" />
               </button>
 
               <button
-                onClick={() => { setError(''); setMode('login'); }}
-                className="w-full py-3 px-4 rounded-full bg-[#22222a] hover:bg-[#2a2a32] text-zinc-200 border border-white/[0.08] font-bold text-sm transition flex items-center justify-center gap-2"
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setView('signin');
+                }}
+                className="w-full py-3 px-6 rounded-full bg-[#1c1c22] hover:bg-[#25252c] text-zinc-300 hover:text-white text-xs font-bold border border-white/[0.08] transition"
               >
-                <LogIn className="w-4 h-4 text-zinc-400" />
-                Sign In
+                Already have an account? Sign In
               </button>
+            </div>
 
-              <div className="relative py-2 flex items-center justify-center">
-                <div className="border-t border-white/[0.08] w-full"></div>
-                <span className="bg-[#16161c] px-3 text-[11px] text-zinc-500 uppercase tracking-wider font-bold absolute">or</span>
-              </div>
-
+            {/* Demo Preview */}
+            <div className="pt-2">
               <button
+                type="button"
                 onClick={handleDemoAccess}
-                className="w-full py-2.5 px-4 rounded-full border border-white/[0.08] bg-[#202028] hover:bg-[#282832] text-primary-light text-xs font-bold transition flex items-center justify-center gap-1.5"
+                className="text-[11px] font-semibold text-zinc-400 hover:text-primary-light transition inline-flex items-center gap-1.5"
               >
-                <Compass className="w-4 h-4 text-[#8b5cf6]" />
-                Explore Demo Mode (Aryan · NEET 2027)
+                <Compass className="w-3.5 h-3.5" />
+                Explore Demo Mode (Preview sample data)
               </button>
             </div>
           </div>
         )}
 
-        {/* SIGNUP VIEW */}
-        {mode === 'signup' && (
-          <form onSubmit={handleSignup} className="space-y-3.5">
-            <div>
-              <label className="block text-xs text-zinc-400 font-bold mb-1">Full Name</label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+        {/* ======================================================= */}
+        {/* VIEW 2: SIGN UP SCREEN                                  */}
+        {/* ======================================================= */}
+        {view === 'signup' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black text-white tracking-tight">
+                Create your NEETUp account
+              </h2>
+              <p className="text-xs text-zinc-400">
+                Start your journey towards your dream medical college.
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSignup} className="space-y-3.5 text-xs">
+              {/* Full Name */}
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-primary-light" />
+                  Full Name
+                </label>
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Vikas Sharma"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
+                  placeholder="e.g. Aryan Sharma"
+                  className="w-full px-4 py-3 rounded-2xl dark-input text-xs text-white"
+                  autoFocus
                   required
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs text-zinc-400 font-bold mb-1">Email Address</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              {/* Email / Mobile */}
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-primary-light" />
+                  Email or Mobile
+                </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="aspirant@gmail.com"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
+                  type="text"
+                  value={identifier}
+                  onChange={e => setIdentifier(e.target.value)}
+                  placeholder="student@example.com or mobile"
+                  className="w-full px-4 py-3 rounded-2xl dark-input text-xs text-white"
                   required
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs text-zinc-400 font-bold mb-1">Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              {/* Password */}
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-primary-light" />
+                  Password
+                </label>
                 <input
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
+                  placeholder="Minimum 6 characters"
+                  className="w-full px-4 py-3 rounded-2xl dark-input text-xs text-white"
                   required
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs text-zinc-400 font-bold mb-1">Confirm Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 mt-2 rounded-full btn-primary text-sm font-bold transition shadow-btn flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Creating Account...
-                </>
-              ) : (
-                'Continue to Personalization'
-              )}
-            </button>
-
-            <p className="text-center text-xs text-zinc-400 pt-1">
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => { setError(''); setInfo(''); setMode('login'); }}
-                className="text-primary-light font-bold hover:underline"
-              >
-                Sign in
-              </button>
-            </p>
-          </form>
-        )}
-
-        {/* LOGIN VIEW */}
-        {mode === 'login' && (
-          <form onSubmit={handleLogin} className="space-y-3.5">
-            <div>
-              <label className="block text-xs text-zinc-400 font-bold mb-1">Email Address</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="aspirant@gmail.com"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs text-zinc-400 font-bold">Password</label>
+              <div className="pt-2">
                 <button
-                  type="button"
-                  onClick={() => { setError(''); setInfo(''); setMode('forgot'); }}
-                  className="text-xs text-primary-light hover:underline font-medium"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-full btn-primary text-xs font-bold transition shadow-btn flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  Forgot password?
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    <>
+                      Create Account
+                      <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                    </>
+                  )}
                 </button>
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            </form>
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setView('signin');
+                }}
+                className="text-xs text-zinc-400 hover:text-white transition"
+              >
+                Already have an account?{' '}
+                <span className="text-primary-light font-bold">Sign In</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================= */}
+        {/* VIEW 3: SIGN IN SCREEN                                  */}
+        {/* ======================================================= */}
+        {view === 'signin' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black text-white tracking-tight">
+                Welcome back
+              </h2>
+              <p className="text-xs text-zinc-400">
+                Sign in to continue your NEET preparation.
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSignin} className="space-y-3.5 text-xs">
+              {/* Email / Mobile */}
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-primary-light" />
+                  Email or Mobile
+                </label>
+                <input
+                  type="text"
+                  value={identifier}
+                  onChange={e => setIdentifier(e.target.value)}
+                  placeholder="student@example.com or mobile"
+                  className="w-full px-4 py-3 rounded-2xl dark-input text-xs text-white"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-primary-light" />
+                  Password
+                </label>
                 <input
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-3.5 py-2.5 text-sm rounded-2xl dark-input"
+                  placeholder="Enter your password"
+                  className="w-full px-4 py-3 rounded-2xl dark-input text-xs text-white"
                   required
                 />
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="remember"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-[#6e3ff5] focus:ring-0"
-              />
-              <label htmlFor="remember" className="text-xs text-zinc-400 cursor-pointer">
-                Remember session
-              </label>
-            </div>
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-full btn-primary text-xs font-bold transition shadow-btn flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      Sign In
+                      <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 mt-2 rounded-full btn-primary text-sm font-bold transition shadow-btn flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Signing In...
-                </>
-              ) : (
-                'Sign In'
-              )}
-            </button>
-
-            <p className="text-center text-xs text-zinc-400 pt-1">
-              New aspirant?{' '}
+            <div className="pt-2 text-center">
               <button
                 type="button"
-                onClick={() => { setError(''); setInfo(''); setMode('signup'); }}
-                className="text-primary-light font-bold hover:underline"
+                onClick={() => {
+                  setError('');
+                  setView('signup');
+                }}
+                className="text-xs text-zinc-400 hover:text-white transition"
               >
-                Create Account
+                New to NEETUp?{' '}
+                <span className="text-primary-light font-bold">Create Account</span>
               </button>
-            </p>
-          </form>
+            </div>
+          </div>
         )}
-
-        {/* FORGOT PASSWORD */}
-        {mode === 'forgot' && (
-          <form onSubmit={handleForgotPassword} className="space-y-3.5">
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Enter your email to receive a password reset link.
-            </p>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="aspirant@gmail.com"
-              className="w-full px-3.5 py-2.5 text-sm rounded-2xl dark-input"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-full btn-primary text-sm font-bold transition shadow-btn flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Reset Link'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setError(''); setInfo(''); setMode('login'); }}
-              className="w-full text-xs text-zinc-400 hover:text-white transition font-medium"
-            >
-              Back to Sign In
-            </button>
-          </form>
-        )}
-
-        <div className="mt-6 pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-medium">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Private, encrypted personal study data</span>
-        </div>
       </div>
     </div>
   );

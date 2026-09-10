@@ -8,6 +8,7 @@ import {
   Reflection, 
   AppInsight, 
   SubjectType,
+  TaskType,
   Chapter,
   Topic
 } from '../types';
@@ -26,6 +27,8 @@ const KEYS = {
   CHAPTERS: 'neet_chapters',
   IS_LOGGED_IN: 'neet_is_logged_in',
   IS_DEMO: 'neet_is_demo',
+  ONBOARDING_COMPLETED: 'neet_onboarding_completed',
+  ONBOARDING_STEP: 'neet_onboarding_step',
 };
 
 // Clean Default Profile for New Users
@@ -38,6 +41,8 @@ const NEW_USER_PROFILE: UserProfile = {
   daily_study_goal: 6, // 6 hours
   daily_question_goal: 200,
   created_at: new Date().toISOString(),
+  onboarding_completed: false,
+  onboarding_step: 1,
 };
 
 // Demo Profile for UI Preview
@@ -163,6 +168,13 @@ export class StorageService {
     if (localStorage.getItem(KEYS.IS_LOGGED_IN) === null) {
       localStorage.setItem(KEYS.IS_LOGGED_IN, 'false');
     }
+    if (localStorage.getItem(KEYS.ONBOARDING_COMPLETED) === null) {
+      const p = this.getProfile();
+      localStorage.setItem(KEYS.ONBOARDING_COMPLETED, p.onboarding_completed ? 'true' : 'false');
+    }
+    if (localStorage.getItem(KEYS.ONBOARDING_STEP) === null) {
+      localStorage.setItem(KEYS.ONBOARDING_STEP, '1');
+    }
   }
 
   // --- Auth State ---
@@ -181,6 +193,33 @@ export class StorageService {
     return localStorage.getItem(KEYS.IS_DEMO) === 'true';
   }
 
+  // --- Onboarding State ---
+  public isOnboardingCompleted(): boolean {
+    if (typeof window === 'undefined') return false;
+    const val = localStorage.getItem(KEYS.ONBOARDING_COMPLETED);
+    if (val !== null) return val === 'true';
+    const profile = this.getProfile();
+    return !!profile.onboarding_completed;
+  }
+
+  public setOnboardingCompleted(completed: boolean): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(KEYS.ONBOARDING_COMPLETED, completed ? 'true' : 'false');
+    this.updateProfile({ onboarding_completed: completed });
+  }
+
+  public getOnboardingStep(): number {
+    if (typeof window === 'undefined') return 1;
+    const val = localStorage.getItem(KEYS.ONBOARDING_STEP);
+    return val ? parseInt(val, 10) || 1 : 1;
+  }
+
+  public setOnboardingStep(step: number): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(KEYS.ONBOARDING_STEP, String(step));
+    this.updateProfile({ onboarding_step: step });
+  }
+
   // --- Clean User Account Creation ---
   public createCleanAccount(name: string, email: string, userId?: string) {
     this.clearAllData();
@@ -192,11 +231,15 @@ export class StorageService {
       exam_date: '2027-05-02',
       daily_study_goal: 6,
       daily_question_goal: 200,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      onboarding_completed: false,
+      onboarding_step: 1
     };
     localStorage.setItem(KEYS.PROFILE, JSON.stringify(cleanProfile));
     localStorage.setItem(KEYS.IS_DEMO, 'false');
     localStorage.setItem(KEYS.IS_LOGGED_IN, 'true');
+    localStorage.setItem(KEYS.ONBOARDING_COMPLETED, 'false');
+    localStorage.setItem(KEYS.ONBOARDING_STEP, '1');
 
     // If signed up via Supabase, upsert profile
     if (supabase && isSupabaseConfigured && userId) {
@@ -585,6 +628,63 @@ export class StorageService {
     localStorage.setItem(KEYS.CHAPTERS, JSON.stringify(generateDemoChapters()));
     localStorage.setItem(KEYS.IS_DEMO, 'true');
     localStorage.setItem(KEYS.IS_LOGGED_IN, 'true');
+    localStorage.setItem(KEYS.ONBOARDING_COMPLETED, 'true');
+    localStorage.setItem(KEYS.ONBOARDING_STEP, '5');
+  }
+
+  // --- Starter Plan Generation for Onboarding Step 5 ---
+  public createStarterPlan(subjects: SubjectType[]): Task[] {
+    const today = getTodayDateStr();
+    const starterTasks: Task[] = [];
+
+    const foundationalTopics: Record<SubjectType, { chapter: string; topic: string; duration: number; type: TaskType }> = {
+      Physics: {
+        chapter: 'Electrostatics',
+        topic: 'Coulombs Law & Field Foundations',
+        duration: 45,
+        type: 'Study'
+      },
+      Chemistry: {
+        chapter: 'Chemical Bonding',
+        topic: 'Hybridization & Molecular Geometry',
+        duration: 45,
+        type: 'Study'
+      },
+      Biology: {
+        chapter: 'Cell Biology',
+        topic: 'Cell Structure & Organelles',
+        duration: 60,
+        type: 'NCERT'
+      }
+    };
+
+    subjects.forEach((sub, idx) => {
+      const info = foundationalTopics[sub];
+      if (info) {
+        starterTasks.push({
+          id: `task_starter_${Date.now()}_${idx}`,
+          date: today,
+          subject_id: sub,
+          subject_name: sub,
+          chapter_name: info.chapter,
+          topic_name: info.topic,
+          task_type: info.type,
+          title: `${info.chapter} · ${info.duration} min`,
+          duration: info.duration,
+          priority: 'High',
+          completed: false,
+          created_at: new Date().toISOString()
+        });
+      }
+    });
+
+    return starterTasks;
+  }
+
+  public saveStarterPlan(tasks: Task[]): void {
+    const existing = this.getTasks();
+    const merged = [...tasks, ...existing];
+    localStorage.setItem(KEYS.TASKS, JSON.stringify(merged));
   }
 
   // --- Profile ---
