@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { storageService } from './services/storageService';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { AppLayout } from './components/layout/AppLayout';
 import { TodayScreen } from './components/today/TodayScreen';
 import { PlanScreen } from './components/plan/PlanScreen';
@@ -14,20 +15,48 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'today' | 'plan' | 'tests' | 'progress'>('today');
 
   useEffect(() => {
-    // Check if user has initialized onboarding
-    const profile = storageService.getProfile();
-    if (!profile.name || profile.name === 'Aspirant') {
-      // Trigger onboarding for new profiles
+    // Check Supabase session on initial load
+    if (supabase && isSupabaseConfigured) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setIsLoggedIn(true);
+          storageService.setLoggedIn(true);
+          storageService.syncFromSupabase();
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          setIsLoggedIn(true);
+          storageService.setLoggedIn(true);
+          await storageService.syncFromSupabase();
+        } else if (event === 'SIGNED_OUT') {
+          setIsLoggedIn(false);
+          storageService.setLoggedIn(false);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
     }
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supabase && isSupabaseConfigured) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('Supabase sign out notice:', err);
+      }
+    }
     storageService.setLoggedIn(false);
     setIsLoggedIn(false);
   };
 
-  const handleAuthSuccess = () => {
+  const handleAuthSuccess = async () => {
     setIsLoggedIn(true);
+    await storageService.syncFromSupabase();
   };
 
   return (

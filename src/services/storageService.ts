@@ -182,10 +182,10 @@ export class StorageService {
   }
 
   // --- Clean User Account Creation ---
-  public createCleanAccount(name: string, email: string) {
+  public createCleanAccount(name: string, email: string, userId?: string) {
     this.clearAllData();
     const cleanProfile: UserProfile = {
-      id: `usr_${Date.now()}`,
+      id: userId || `usr_${Date.now()}`,
       name: name.trim() || 'Aspirant',
       email: email.trim(),
       target_exam: 'NEET 2027',
@@ -197,7 +197,148 @@ export class StorageService {
     localStorage.setItem(KEYS.PROFILE, JSON.stringify(cleanProfile));
     localStorage.setItem(KEYS.IS_DEMO, 'false');
     localStorage.setItem(KEYS.IS_LOGGED_IN, 'true');
+
+    // If signed up via Supabase, upsert profile
+    if (supabase && isSupabaseConfigured && userId) {
+      supabase.from('profiles').upsert({
+        id: userId,
+        name: cleanProfile.name,
+        email: cleanProfile.email,
+        target_exam: cleanProfile.target_exam,
+        exam_date: cleanProfile.exam_date,
+        daily_study_goal: cleanProfile.daily_study_goal,
+        daily_question_goal: cleanProfile.daily_question_goal
+      }).then();
+    }
+
     return cleanProfile;
+  }
+
+  // --- Supabase Cloud Sync ---
+  public async syncFromSupabase(): Promise<void> {
+    if (!supabase || !isSupabaseConfigured) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Sync Profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileData) {
+        const localProfile = this.getProfile();
+        const merged: UserProfile = {
+          ...localProfile,
+          id: user.id,
+          name: profileData.name || localProfile.name,
+          email: profileData.email || user.email || '',
+          target_exam: profileData.target_exam || localProfile.target_exam,
+          exam_date: profileData.exam_date || localProfile.exam_date,
+          daily_study_goal: profileData.daily_study_goal || localProfile.daily_study_goal,
+          daily_question_goal: profileData.daily_question_goal || localProfile.daily_question_goal
+        };
+        localStorage.setItem(KEYS.PROFILE, JSON.stringify(merged));
+      }
+
+      // 2. Sync Tasks
+      const { data: remoteTasks } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (remoteTasks && remoteTasks.length > 0) {
+        const mappedTasks: Task[] = remoteTasks.map(t => ({
+          id: t.id,
+          date: t.date,
+          subject_name: t.subject_name,
+          subject_id: t.subject_name,
+          chapter_name: t.chapter_name,
+          topic_name: t.topic_name,
+          task_type: t.task_type,
+          title: t.title,
+          duration: t.duration,
+          priority: t.priority,
+          completed: t.completed,
+          completed_at: t.completed_at,
+          created_at: t.created_at
+        }));
+        localStorage.setItem(KEYS.TASKS, JSON.stringify(mappedTasks));
+      }
+
+      // 3. Sync Tests
+      const { data: remoteTests } = await supabase
+        .from('tests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (remoteTests && remoteTests.length > 0) {
+        const mappedTests: TestRecord[] = remoteTests.map(t => ({
+          id: t.id,
+          name: t.name,
+          date: t.date,
+          physics_score: t.physics_score,
+          chemistry_score: t.chemistry_score,
+          biology_score: t.biology_score,
+          maximum_marks: t.maximum_marks,
+          correct: t.correct,
+          incorrect: t.incorrect,
+          unattempted: t.unattempted,
+          time_taken: t.time_taken,
+          created_at: t.created_at
+        }));
+        localStorage.setItem(KEYS.TESTS, JSON.stringify(mappedTests));
+      }
+
+      // 4. Sync Question Logs
+      const { data: remoteQ } = await supabase
+        .from('question_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (remoteQ && remoteQ.length > 0) {
+        const mappedQ: QuestionLog[] = remoteQ.map(q => ({
+          id: q.id,
+          date: q.date,
+          subject_id: q.subject_name,
+          subject_name: q.subject_name,
+          total: q.total,
+          correct: q.correct,
+          incorrect: q.incorrect,
+          created_at: q.created_at
+        }));
+        localStorage.setItem(KEYS.QUESTION_LOGS, JSON.stringify(mappedQ));
+      }
+
+      // 5. Sync Weak Topics
+      const { data: remoteWT } = await supabase
+        .from('weak_topics')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (remoteWT && remoteWT.length > 0) {
+        const mappedWT: WeakTopic[] = remoteWT.map(wt => ({
+          id: wt.id,
+          subject_name: wt.subject_name,
+          chapter_name: wt.chapter_name,
+          topic_name: wt.topic_name,
+          priority: wt.priority,
+          status: wt.status,
+          last_studied: wt.last_studied,
+          next_revision: wt.next_revision,
+          created_at: wt.created_at
+        }));
+        localStorage.setItem(KEYS.WEAK_TOPICS, JSON.stringify(mappedWT));
+      }
+    } catch (e) {
+      console.warn('Supabase sync notice:', e);
+    }
   }
 
   // --- Completely Clear All Data to 0 ---
@@ -460,6 +601,19 @@ export class StorageService {
     const current = this.getProfile();
     const updated = { ...current, ...profile };
     localStorage.setItem(KEYS.PROFILE, JSON.stringify(updated));
+
+    if (supabase && isSupabaseConfigured && current.id && !current.id.startsWith('usr_')) {
+      supabase.from('profiles').upsert({
+        id: current.id,
+        name: updated.name,
+        email: updated.email,
+        target_exam: updated.target_exam,
+        exam_date: updated.exam_date,
+        daily_study_goal: updated.daily_study_goal,
+        daily_question_goal: updated.daily_question_goal
+      }).then();
+    }
+
     return updated;
   }
 
@@ -479,13 +633,38 @@ export class StorageService {
 
   public addTask(taskData: Omit<Task, 'id' | 'created_at'>): Task {
     const tasks = this.getTasks();
+    const profile = this.getProfile();
+    const isSupabaseUser = profile.id && !profile.id.startsWith('usr_');
+    const newId = isSupabaseUser && typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
     const newTask: Task = {
       ...taskData,
-      id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: newId,
       created_at: new Date().toISOString()
     };
     tasks.unshift(newTask);
     localStorage.setItem(KEYS.TASKS, JSON.stringify(tasks));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && isSupabaseUser) {
+      supabase.from('tasks').insert({
+        id: newTask.id,
+        user_id: profile.id,
+        date: newTask.date,
+        subject_name: newTask.subject_name,
+        chapter_name: newTask.chapter_name || null,
+        topic_name: newTask.topic_name || null,
+        task_type: newTask.task_type,
+        title: newTask.title,
+        duration: newTask.duration,
+        priority: newTask.priority,
+        completed: newTask.completed,
+        completed_at: newTask.completed_at || null
+      }).then();
+    }
+
     return newTask;
   }
 
@@ -498,6 +677,14 @@ export class StorageService {
     tasks[idx].completed = completed;
     tasks[idx].completed_at = completed ? new Date().toISOString() : undefined;
     localStorage.setItem(KEYS.TASKS, JSON.stringify(tasks));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && !taskId.startsWith('task_') && !taskId.startsWith('demo_')) {
+      supabase.from('tasks').update({
+        completed: completed,
+        completed_at: tasks[idx].completed_at || null
+      }).eq('id', taskId).then();
+    }
 
     // Also update corresponding chapter's progress if applicable
     if (tasks[idx].chapter_name && tasks[idx].subject_name) {
@@ -536,6 +723,12 @@ export class StorageService {
     const tasks = this.getTasks();
     const filtered = tasks.filter(t => t.id !== taskId);
     localStorage.setItem(KEYS.TASKS, JSON.stringify(filtered));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && !taskId.startsWith('task_') && !taskId.startsWith('demo_')) {
+      supabase.from('tasks').delete().eq('id', taskId).then();
+    }
+
     return true;
   }
 
@@ -546,6 +739,12 @@ export class StorageService {
 
     tasks[idx] = { ...tasks[idx], ...updates };
     localStorage.setItem(KEYS.TASKS, JSON.stringify(tasks));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && !taskId.startsWith('task_') && !taskId.startsWith('demo_')) {
+      supabase.from('tasks').update(updates).eq('id', taskId).then();
+    }
+
     return tasks[idx];
   }
 
@@ -561,13 +760,38 @@ export class StorageService {
 
   public addTest(testData: Omit<TestRecord, 'id' | 'created_at'>): TestRecord {
     const tests = this.getTests();
+    const profile = this.getProfile();
+    const isSupabaseUser = profile.id && !profile.id.startsWith('usr_');
+    const newId = isSupabaseUser && typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `test_${Date.now()}`;
+
     const newTest: TestRecord = {
       ...testData,
-      id: `test_${Date.now()}`,
+      id: newId,
       created_at: new Date().toISOString()
     };
     tests.unshift(newTest);
     localStorage.setItem(KEYS.TESTS, JSON.stringify(tests));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && isSupabaseUser) {
+      supabase.from('tests').insert({
+        id: newTest.id,
+        user_id: profile.id,
+        name: newTest.name,
+        date: newTest.date,
+        physics_score: newTest.physics_score,
+        chemistry_score: newTest.chemistry_score,
+        biology_score: newTest.biology_score,
+        maximum_marks: newTest.maximum_marks || 720,
+        correct: newTest.correct,
+        incorrect: newTest.incorrect,
+        unattempted: newTest.unattempted,
+        time_taken: newTest.time_taken
+      }).then();
+    }
+
     return newTest;
   }
 
@@ -583,13 +807,35 @@ export class StorageService {
 
   public addWeakTopic(item: Omit<WeakTopic, 'id' | 'created_at'>): WeakTopic {
     const list = this.getWeakTopics();
+    const profile = this.getProfile();
+    const isSupabaseUser = profile.id && !profile.id.startsWith('usr_');
+    const newId = isSupabaseUser && typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `wt_${Date.now()}`;
+
     const newItem: WeakTopic = {
       ...item,
-      id: `wt_${Date.now()}`,
+      id: newId,
       created_at: new Date().toISOString()
     };
     list.unshift(newItem);
     localStorage.setItem(KEYS.WEAK_TOPICS, JSON.stringify(list));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && isSupabaseUser) {
+      supabase.from('weak_topics').insert({
+        id: newItem.id,
+        user_id: profile.id,
+        subject_name: newItem.subject_name,
+        chapter_name: newItem.chapter_name || null,
+        topic_name: newItem.topic_name,
+        priority: newItem.priority,
+        status: newItem.status,
+        last_studied: newItem.last_studied || null,
+        next_revision: newItem.next_revision || null
+      }).then();
+    }
+
     return newItem;
   }
 
@@ -652,8 +898,14 @@ export class StorageService {
   }): QuestionLog {
     const today = getTodayDateStr();
     const logs: QuestionLog[] = this.getQuestionLogs();
+    const profile = this.getProfile();
+    const isSupabaseUser = profile.id && !profile.id.startsWith('usr_');
+    const newId = isSupabaseUser && typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `qlog_${Date.now()}`;
+
     const newLog: QuestionLog = {
-      id: `qlog_${Date.now()}`,
+      id: newId,
       date: today,
       subject_id: entry.subject_name,
       subject_name: entry.subject_name,
@@ -664,6 +916,20 @@ export class StorageService {
     };
     logs.unshift(newLog);
     localStorage.setItem(KEYS.QUESTION_LOGS, JSON.stringify(logs));
+
+    // Supabase cloud sync
+    if (supabase && isSupabaseConfigured && isSupabaseUser) {
+      supabase.from('question_logs').insert({
+        id: newLog.id,
+        user_id: profile.id,
+        date: newLog.date,
+        subject_name: newLog.subject_name,
+        total: newLog.total,
+        correct: newLog.correct,
+        incorrect: newLog.incorrect
+      }).then();
+    }
+
     return newLog;
   }
 
