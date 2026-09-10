@@ -1,6 +1,7 @@
 export type SubjectType = 'Physics' | 'Chemistry' | 'Biology';
 
 export type TaskType = 
+  | 'Study'
   | 'Lecture'
   | 'NCERT'
   | 'Notes'
