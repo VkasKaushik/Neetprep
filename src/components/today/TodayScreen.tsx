@@ -13,9 +13,10 @@ import {
 
 interface TodayScreenProps {
   onNavigateToTab?: (tab: 'today' | 'plan' | 'tests' | 'progress') => void;
+  onOpenProfile?: () => void;
 }
 
-export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => {
+export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab, onOpenProfile }) => {
   const profile = storageService.getProfile();
   const todayStr = getTodayDateStr();
 
@@ -176,13 +177,27 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
   return (
     <div className="space-y-6 pb-24 md:pb-12 max-w-xl mx-auto px-1 sm:px-0">
       {/* 1. HEADER */}
-      <header className="space-y-1 pt-2">
-        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-          {greeting}, {profile.name || 'Aspirant'}
-        </h1>
-        <p className="text-sm font-medium text-zinc-400">
-          {profile.target_exam || 'NEET 2027'} · {daysRemaining} days remaining
-        </p>
+      <header className="flex items-center justify-between pt-2">
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            {greeting}, {profile.name || 'Aspirant'}
+          </h1>
+          <p className="text-sm font-medium text-zinc-400">
+            {profile.target_exam || 'NEET 2027'} · {daysRemaining} days remaining
+          </p>
+        </div>
+        {onOpenProfile && (
+          <button
+            onClick={onOpenProfile}
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1e1e24] border border-white/[0.08] hover:border-[#6e3ff5]/40 flex items-center justify-center text-zinc-300 hover:text-white transition shadow-sm group shrink-0"
+            aria-label="Profile & Settings"
+            title="Profile & Settings"
+          >
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-[#6e3ff5] to-[#9065ff] text-white flex items-center justify-center font-black text-xs shadow group-hover:scale-105 transition">
+              {(profile.name || 'A').charAt(0).toUpperCase()}
+            </div>
+          </button>
+        )}
       </header>
 
       {/* 2. TODAY'S PLAN — Most prominent section */}
