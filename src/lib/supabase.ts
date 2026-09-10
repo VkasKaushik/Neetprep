@@ -1,57 +1,44 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Direct static references so Vite replaces them at build time
-const viteUrl = (import.meta.env.VITE_SUPABASE_URL || (import.meta.env as any).SUPABASE_URL || '') as string;
-const viteKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || (import.meta.env as any).SUPABASE_ANON_KEY || '') as string;
+// Application's own Supabase backend credentials from environment
+const envUrl = ((import.meta.env.VITE_SUPABASE_URL || (import.meta.env as any).SUPABASE_URL || '') as string).trim();
+const envKey = ((import.meta.env.VITE_SUPABASE_ANON_KEY || (import.meta.env as any).SUPABASE_ANON_KEY || '') as string).trim();
 
-export function getSupabaseCredentials(): { url: string; key: string } {
-  const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('neet_supabase_url') || '' : '';
-  const storedKey = typeof window !== 'undefined' ? localStorage.getItem('neet_supabase_anon_key') || '' : '';
+// Silent cached fallback (from previous session or env)
+const storedUrl = typeof window !== 'undefined' ? (localStorage.getItem('neet_supabase_url') || '').trim() : '';
+const storedKey = typeof window !== 'undefined' ? (localStorage.getItem('neet_supabase_anon_key') || '').trim() : '';
 
-  const url = (storedUrl || viteUrl || '').trim();
-  const key = (storedKey || viteKey || '').trim();
+const activeUrl = envUrl || storedUrl;
+const activeKey = envKey || storedKey;
 
-  return { url, key };
-}
+export const isSupabaseConfigured: boolean = Boolean(
+  activeUrl &&
+  activeKey &&
+  activeUrl.startsWith('http')
+);
 
 let clientInstance: SupabaseClient | null = null;
 
-export function initSupabaseClient(): SupabaseClient | null {
-  const { url, key } = getSupabaseCredentials();
-  if (url && key && url.startsWith('http')) {
+export function getSupabase(): SupabaseClient | null {
+  if (!isSupabaseConfigured) return null;
+  if (!clientInstance) {
     try {
-      clientInstance = createClient(url, key, {
+      clientInstance = createClient(activeUrl, activeKey, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
         },
       });
-      return clientInstance;
     } catch (err) {
-      console.error('Failed to create Supabase client:', err);
+      console.warn('Supabase initialization warning:', err);
       return null;
     }
   }
-  return null;
+  return clientInstance;
 }
 
-export function saveSupabaseCredentials(url: string, key: string): SupabaseClient | null {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('neet_supabase_url', url.trim());
-    localStorage.setItem('neet_supabase_anon_key', key.trim());
-  }
-  return initSupabaseClient();
-}
+export const supabase: SupabaseClient | null = getSupabase();
+export const SUPABASE_URL: string = activeUrl;
+export const SUPABASE_ANON_KEY: string = activeKey;
 
-// Initial instance
-export const supabase: SupabaseClient | null = initSupabaseClient();
-
-export const isSupabaseConfigured: boolean = Boolean(
-  getSupabaseCredentials().url &&
-  getSupabaseCredentials().key &&
-  getSupabaseCredentials().url.startsWith('http')
-);
-
-export const SUPABASE_URL: string = getSupabaseCredentials().url;
-export const SUPABASE_ANON_KEY: string = getSupabaseCredentials().key;

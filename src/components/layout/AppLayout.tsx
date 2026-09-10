@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { storageService } from '../../services/storageService';
-import { isSupabaseConfigured } from '../../lib/supabase';
 import { Modal } from '../common/UIComponents';
 import { 
   Sun, 
   Calendar, 
   Award, 
   TrendingUp, 
-  Settings, 
+  Sliders, 
   LogOut, 
   Sparkles, 
-  Database, 
   Trash2,
-  Compass
+  Compass,
+  CheckCircle2,
+  Clock,
+  HelpCircle,
+  User
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -32,10 +34,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const isDemo = storageService.isDemoMode();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Settings states
-  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('neet_supabase_url') || '');
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => localStorage.getItem('neet_supabase_anon_key') || '');
-  const [saveSettingsSuccess, setSaveSettingsSuccess] = useState(false);
+  // Student Study Goals & Profile states
+  const [studentName, setStudentName] = useState(profile.name || '');
+  const [targetExam, setTargetExam] = useState(profile.target_exam || 'NEET 2027');
+  const [examDate, setExamDate] = useState(profile.exam_date || '2027-05-02');
+  const [dailyHours, setDailyHours] = useState(profile.daily_study_goal || 6);
+  const [dailyQuestions, setDailyQuestions] = useState(profile.daily_question_goal || 200);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    setStudentName(profile.name || '');
+    setTargetExam(profile.target_exam || 'NEET 2027');
+    setExamDate(profile.exam_date || '2027-05-02');
+    setDailyHours(profile.daily_study_goal || 6);
+    setDailyQuestions(profile.daily_question_goal || 200);
+  }, [isSettingsOpen]);
 
   const navItems = [
     { id: 'today', label: 'Today', icon: Sun },
@@ -44,26 +57,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     { id: 'progress', label: 'Progress', icon: TrendingUp },
   ] as const;
 
-  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+  const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('neet_supabase_url', supabaseUrl.trim());
-    localStorage.setItem('neet_supabase_anon_key', supabaseAnonKey.trim());
-    setSaveSettingsSuccess(true);
+    storageService.updateProfile({
+      name: studentName.trim() || 'Aspirant',
+      target_exam: targetExam,
+      exam_date: examDate,
+      daily_study_goal: Number(dailyHours),
+      daily_question_goal: Number(dailyQuestions),
+    });
+    setSaveSuccess(true);
     setTimeout(() => {
-      setSaveSettingsSuccess(false);
+      setSaveSuccess(false);
+      setIsSettingsOpen(false);
       window.location.reload();
-    }, 1000);
+    }, 800);
   };
 
   const handleResetToClean = () => {
-    if (window.confirm('Reset app completely to empty state? All tasks, tests, questions, and streaks will be set to 0.')) {
+    if (window.confirm('Are you sure you want to reset all your study records to 0? This will clear tasks, tests, and question logs.')) {
       storageService.clearAllData();
       window.location.reload();
     }
   };
 
   const handleLoadDemo = () => {
-    if (window.confirm('Load demo preview dataset (Aryan · NEET 2027)?')) {
+    if (window.confirm('Load sample preview dataset (Aryan · NEET 2027)?')) {
       storageService.loadDemoData();
       window.location.reload();
     }
@@ -144,8 +163,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onClick={() => setIsSettingsOpen(true)}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-full text-xs font-semibold text-zinc-400 hover:text-white hover:bg-[#1a1a20] transition"
           >
-            <Settings className="w-3.5 h-3.5" />
-            Backend & Data
+            <Sliders className="w-3.5 h-3.5 text-[#8b5cf6]" />
+            Study Goals & Profile
           </button>
           <button
             onClick={onLogout}
@@ -175,9 +194,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="w-8 h-8 rounded-full bg-[#1e1e24] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white transition"
-            aria-label="Settings"
+            aria-label="Study Goals & Profile"
           >
-            <Settings className="w-4 h-4" />
+            <Sliders className="w-4 h-4 text-primary-light" />
           </button>
         </div>
       </header>
@@ -213,102 +232,149 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         })}
       </nav>
 
-      {/* SETTINGS / SUPABASE CONFIG MODAL */}
+      {/* STUDENT STUDY GOALS & PROFILE MODAL */}
       <Modal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        title="Settings & Data"
-        subtitle="Manage cloud sync or reset user database"
+        title="Study Goals & Profile"
+        subtitle="Personalize your NEET milestone and daily study targets"
       >
-        <div className="space-y-5 text-xs">
-          {/* Storage status badge */}
-          <div className="p-3.5 rounded-2xl bg-[#222228] border border-white/[0.08] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4 text-[#8b5cf6]" />
-              <div>
-                <span className="font-bold text-white block">Persistence Mode</span>
-                <span className="text-[11px] text-zinc-400">
-                  {isSupabaseConfigured
-                    ? 'Connected to Supabase PostgreSQL'
-                    : isDemo
-                    ? 'Demo Preview Dataset Active'
-                    : 'Personal Empty State (User Created Data Only)'}
-                </span>
-              </div>
-            </div>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isSupabaseConfigured ? 'bg-emerald-500/20 text-emerald-300' : isDemo ? 'bg-amber-500/20 text-amber-300' : 'bg-[#6e3ff5]/20 text-primary-light'}`}>
-              {isSupabaseConfigured ? 'Supabase' : isDemo ? 'Demo Mode' : 'Clean User'}
-            </span>
+        <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
+          {/* Full Name */}
+          <div>
+            <label className="block text-zinc-400 font-bold mb-1.5 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-primary-light" />
+              Full Name
+            </label>
+            <input
+              type="text"
+              value={studentName}
+              onChange={e => setStudentName(e.target.value)}
+              placeholder="e.g. Aryan"
+              className="w-full px-3.5 py-2.5 rounded-2xl dark-input text-xs text-white"
+              required
+            />
           </div>
 
-          {/* Database Clear / Reset Actions */}
-          <div className="space-y-2 pt-1 border-t border-white/[0.06]">
-            <span className="font-bold text-zinc-400 uppercase tracking-wider block">User Data Controls</span>
-            
+          {/* Target Exam */}
+          <div>
+            <label className="block text-zinc-400 font-bold mb-1.5 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-primary-light" />
+              Target Exam Milestone
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {['NEET 2026', 'NEET 2027', 'NEET 2028', 'NEET Dropper'].map(opt => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setTargetExam(opt)}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition text-center ${
+                    targetExam === opt
+                      ? 'border-[#6e3ff5] bg-[#6e3ff5] text-white shadow-btn'
+                      : 'border-white/[0.08] bg-[#202028] text-zinc-300 hover:border-white/[0.16]'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Exam Date */}
+          <div>
+            <label className="block text-zinc-400 font-bold mb-1.5 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-primary-light" />
+              Target Exam Date
+            </label>
+            <input
+              type="date"
+              value={examDate}
+              onChange={e => setExamDate(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl dark-input text-xs text-white"
+            />
+          </div>
+
+          {/* Daily Study Hours */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-zinc-400 font-bold flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-primary-light" />
+                Daily Study Target
+              </label>
+              <span className="font-black text-primary-light text-sm">{dailyHours} hrs</span>
+            </div>
+            <input
+              type="range"
+              min="2"
+              max="14"
+              step="1"
+              value={dailyHours}
+              onChange={e => setDailyHours(Number(e.target.value))}
+              className="w-full accent-[#6e3ff5] cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-zinc-500 font-medium mt-0.5">
+              <span>Light (2h)</span>
+              <span>Recommended (6h)</span>
+              <span>Intense (12h+)</span>
+            </div>
+          </div>
+
+          {/* Daily MCQs Target */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-zinc-400 font-bold flex items-center gap-1.5">
+                <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                Daily MCQs Target
+              </label>
+              <span className="font-black text-emerald-400 text-sm">{dailyQuestions} questions</span>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {[100, 150, 200, 250, 300].map(q => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setDailyQuestions(q)}
+                  className={`py-1.5 rounded-xl border text-[11px] font-bold transition text-center ${
+                    dailyQuestions === q
+                      ? 'border-[#6e3ff5] bg-[#6e3ff5] text-white shadow-btn'
+                      : 'border-white/[0.08] bg-[#202028] text-zinc-300'
+                  }`}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {saveSuccess && (
+            <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-center font-bold text-xs flex items-center justify-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Study goals updated!
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full py-3 rounded-full btn-primary text-xs font-bold transition shadow-btn"
+          >
+            Save Changes
+          </button>
+
+          {/* Reset Study Records */}
+          <div className="pt-3 border-t border-white/[0.06] space-y-2">
+            <span className="font-bold text-zinc-500 uppercase tracking-wider block text-[10px]">
+              Reset Progress
+            </span>
             <button
               type="button"
               onClick={handleResetToClean}
-              className="w-full py-2.5 px-3 rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold transition flex items-center justify-center gap-2"
+              className="w-full py-2 px-3 rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition flex items-center justify-center gap-2"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Reset All Data to Empty (0 Tasks, 0 Tests, 0%)
+              Reset My Study Records to 0
             </button>
-
-            {!isDemo && (
-              <button
-                type="button"
-                onClick={handleLoadDemo}
-                className="w-full py-2 px-3 rounded-full border border-white/[0.08] bg-[#222228] hover:bg-[#2a2a32] text-zinc-300 text-xs font-medium transition flex items-center justify-center gap-1.5"
-              >
-                <Compass className="w-3.5 h-3.5 text-[#8b5cf6]" />
-                Load Sample Demo Preview (For UI Inspection)
-              </button>
-            )}
           </div>
-
-          {/* Optional Supabase credentials form */}
-          <form onSubmit={handleSaveSupabaseConfig} className="space-y-3 pt-2 border-t border-white/[0.06]">
-            <span className="font-bold text-zinc-400 uppercase tracking-wider block">Supabase Cloud Sync (Optional)</span>
-            <div>
-              <label className="block text-zinc-400 font-bold mb-1">
-                Supabase Project URL
-              </label>
-              <input
-                type="text"
-                value={supabaseUrl}
-                onChange={e => setSupabaseUrl(e.target.value)}
-                placeholder="https://xyzcompany.supabase.co"
-                className="w-full px-3.5 py-2 rounded-2xl dark-input text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-zinc-400 font-bold mb-1">
-                Supabase Anon Key
-              </label>
-              <input
-                type="password"
-                value={supabaseAnonKey}
-                onChange={e => setSupabaseAnonKey(e.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5..."
-                className="w-full px-3.5 py-2 rounded-2xl dark-input text-xs"
-              />
-            </div>
-
-            {saveSettingsSuccess && (
-              <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-center font-bold">
-                ✓ Supabase settings saved! Reloading...
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-2.5 rounded-full btn-primary text-xs font-bold transition shadow-btn"
-            >
-              Save & Connect Supabase
-            </button>
-          </form>
-        </div>
+        </form>
       </Modal>
     </div>
   );

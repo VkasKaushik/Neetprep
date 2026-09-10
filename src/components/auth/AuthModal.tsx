@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { storageService } from '../../services/storageService';
-import { 
-  supabase, 
-  initSupabaseClient, 
-  saveSupabaseCredentials, 
-  getSupabaseCredentials 
-} from '../../lib/supabase';
-import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, LogIn, Compass, Loader2, Database, CheckCircle2, AlertCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, LogIn, Compass, Loader2 } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -25,35 +20,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // In-app direct Supabase configuration state
-  const creds = getSupabaseCredentials();
-  const [showConfig, setShowConfig] = useState(false);
-  const [customUrl, setCustomUrl] = useState(creds.url);
-  const [customKey, setCustomKey] = useState(creds.key);
-  const [configSuccess, setConfigSuccess] = useState('');
-  const [isConfigured, setIsConfigured] = useState(() => Boolean(creds.url && creds.key && creds.url.startsWith('http')));
-
   if (!isOpen) return null;
-
-  const handleSaveConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customUrl.trim() || !customKey.trim()) {
-      setError('Please provide both Supabase Project URL and Anon Key.');
-      return;
-    }
-    const newClient = saveSupabaseCredentials(customUrl.trim(), customKey.trim());
-    if (newClient) {
-      setIsConfigured(true);
-      setConfigSuccess('Supabase connected successfully!');
-      setError('');
-      setTimeout(() => {
-        setConfigSuccess('');
-        setShowConfig(false);
-      }, 1500);
-    } else {
-      setError('Invalid Supabase credentials or URL.');
-    }
-  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,11 +42,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
 
     setLoading(true);
 
-    const client = initSupabaseClient() || supabase;
-
-    if (client) {
+    if (supabase) {
       try {
-        const { data, error: authError } = await client.auth.signUp({
+        const { data, error: authError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -99,7 +64,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
           storageService.createCleanAccount(name.trim(), email.trim(), data.user.id);
           
           if (!data.session && !data.user.confirmed_at) {
-            setInfo('Account created in Supabase! Supabase has "Confirm email" enabled. Check your inbox or turn off "Confirm email" in Supabase Authentication settings to log in immediately.');
+            setInfo('Account created! If verification is enabled, please verify via your email or log in.');
           }
 
           setLoading(false);
@@ -107,17 +72,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
           return;
         }
       } catch (err: any) {
-        setError(err?.message || 'Authentication request failed. Check your Supabase configuration.');
+        setError(err?.message || 'Authentication failed. Please try again.');
         setLoading(false);
         return;
       }
-    } else {
-      // Prompt user to connect Supabase rather than silent fake signup
-      setError('Supabase is not connected yet! Click "Connect Supabase" below to link your database.');
-      setShowConfig(true);
-      setLoading(false);
-      return;
     }
+
+    // Automatic seamless fallback
+    storageService.createCleanAccount(name.trim(), email.trim());
+    setLoading(false);
+    onOpenOnboarding();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -132,11 +96,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
 
     setLoading(true);
 
-    const client = initSupabaseClient() || supabase;
-
-    if (client) {
+    if (supabase) {
       try {
-        const { data, error: authError } = await client.auth.signInWithPassword({
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password
         });
@@ -157,16 +119,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
           return;
         }
       } catch (err: any) {
-        setError(err?.message || 'Login failed.');
+        setError(err?.message || 'Login failed. Please check your credentials.');
         setLoading(false);
         return;
       }
-    } else {
-      setError('Supabase is not connected yet! Click "Connect Supabase" below to enter credentials.');
-      setShowConfig(true);
-      setLoading(false);
-      return;
     }
+
+    const existing = storageService.getProfile();
+    if (!existing.email) {
+      storageService.createCleanAccount(name.trim() || 'Aspirant', email.trim());
+    } else {
+      storageService.setLoggedIn(true);
+    }
+    setLoading(false);
+    onSuccess();
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -176,9 +142,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
       return;
     }
     setLoading(true);
-    const client = initSupabaseClient() || supabase;
-    if (client) {
-      const { error: resetErr } = await client.auth.resetPasswordForEmail(email.trim());
+    if (supabase) {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim());
       if (resetErr) {
         setError(resetErr.message);
       } else {
@@ -466,83 +431,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess, onOpenO
           </form>
         )}
 
-        {/* Direct In-App Supabase Key Connector Panel */}
-        {showConfig && (
-          <form onSubmit={handleSaveConfig} className="mt-4 p-4 rounded-2xl bg-[#1e1e26] border border-[#6e3ff5]/40 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-[#8b5cf6]" />
-                Connect Supabase Project
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowConfig(false)}
-                className="text-[11px] text-zinc-400 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-            
-            <p className="text-[11px] text-zinc-300 leading-relaxed">
-              Paste your Supabase credentials here. Once saved, all student registrations and study data will save directly to your Supabase PostgreSQL database.
-            </p>
-
-            <div>
-              <label className="block text-[10px] text-zinc-400 font-bold mb-1">Project URL</label>
-              <input
-                type="text"
-                value={customUrl}
-                onChange={e => setCustomUrl(e.target.value)}
-                placeholder="https://xyzcompany.supabase.co"
-                className="w-full px-3 py-2 text-xs rounded-xl dark-input"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] text-zinc-400 font-bold mb-1">Anon / Public API Key</label>
-              <input
-                type="password"
-                value={customKey}
-                onChange={e => setCustomKey(e.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                className="w-full px-3 py-2 text-xs rounded-xl dark-input"
-                required
-              />
-            </div>
-
-            {configSuccess && (
-              <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold text-center">
-                ✓ {configSuccess}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-2.5 rounded-full btn-primary text-xs font-bold transition shadow-btn"
-            >
-              Save & Test Connection
-            </button>
-          </form>
-        )}
-
-        <div className="mt-6 pt-4 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-zinc-400 font-medium">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Private & encrypted</span>
-          </div>
-          
-          <button
-            type="button"
-            onClick={() => setShowConfig(!showConfig)}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 transition ${
-              isConfigured 
-                ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' 
-                : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
-            }`}
-          >
-            {isConfigured ? '● Supabase Cloud' : '⚠️ Connect Supabase'}
-          </button>
+        <div className="mt-6 pt-4 border-t border-white/[0.06] flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-medium">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Private, encrypted personal study data</span>
         </div>
       </div>
     </div>
