@@ -1,20 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Task, SubjectType, WeakTopic } from '../../types';
+import { Task } from '../../types';
 import { storageService, getTodayDateStr } from '../../services/storageService';
-import { SubjectBadge, PriorityBadge, CircularProgress, ProgressBar } from '../common/UIComponents';
+import { SubjectBadge, PriorityBadge, ProgressBar } from '../common/UIComponents';
 import { AddTaskModal } from './AddTaskModal';
-import { LogQuestionsModal } from './LogQuestionsModal';
 import { 
-  Plus, 
   Check, 
   Clock, 
-  Flame, 
-  Target, 
-  Sparkles,
-  ChevronRight,
-  Trash2,
-  AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  ChevronRight
 } from 'lucide-react';
 
 interface TodayScreenProps {
@@ -26,9 +19,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
   const todayStr = getTodayDateStr();
 
   const [tasks, setTasks] = useState<Task[]>(() => storageService.getTasksForDate(todayStr));
-  const [weakTopics, setWeakTopics] = useState<WeakTopic[]>(() => storageService.getWeakTopics());
   const [isAddTaskOpen, setIsAddTaskOpen] = useState<boolean>(false);
-  const [isLogQuestionsOpen, setIsLogQuestionsOpen] = useState<boolean>(false);
 
   // Dynamic countdown to exam
   const daysRemaining = useMemo(() => {
@@ -39,7 +30,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
     return diffDays > 0 ? diffDays : 245;
   }, [profile.exam_date]);
 
-  // Greeting
+  // Dynamic greeting based on time of day
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -50,26 +41,25 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
   // Today stats
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.completed).length;
-  const todayProgressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const uncompletedTasks = tasks.filter(t => !t.completed);
+  const currentTask = uncompletedTasks.length > 0 ? uncompletedTasks[0] : (tasks.length > 0 ? tasks[0] : null);
+  const allCompleted = totalTasks > 0 && completedTasks === totalTasks;
 
-  // Study hours
+  // Study hours calculation
   const studyMinutes = useMemo(() => {
     return tasks
       .filter(t => t.completed)
       .reduce((acc, t) => acc + (t.duration || 0), 0);
   }, [tasks]);
-  const studyHoursDisplay = `${Math.floor(studyMinutes / 60)}h ${studyMinutes % 60}m`;
+  const studyHoursLogged = Math.round((studyMinutes / 60) * 10) / 10;
+  const goalStudyHours = profile.daily_study_goal || 8;
 
   // Questions solved today
   const todayQuestionLogs = useMemo(() => {
     return storageService.getQuestionLogs().filter(l => l.date === todayStr);
-  }, [todayStr, tasks]);
+  }, [todayStr]);
   const todayQuestionsCount = todayQuestionLogs.reduce((acc, l) => acc + (l.total || 0), 0);
-  const todayCorrectCount = todayQuestionLogs.reduce((acc, l) => acc + (l.correct || 0), 0);
-  const todayAccuracy = todayQuestionsCount > 0 ? Math.round((todayCorrectCount / todayQuestionsCount) * 100) : 0;
-
-  // Streak
-  const streakInfo = storageService.calculateStreak();
+  const goalQuestions = profile.daily_question_goal || 200;
 
   // Subject Progress
   const phyProgress = storageService.calculateSubjectProgress('Physics');
@@ -86,7 +76,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
     }
   };
 
-  // Add Task
+  // Add task fallback handler
   const handleAddTask = (newTaskData: any) => {
     const added = storageService.addTask(newTaskData);
     if (added.date === todayStr) {
@@ -94,407 +84,246 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({ onNavigateToTab }) => 
     }
   };
 
-  // Delete Task
-  const handleDeleteTask = (e: React.MouseEvent, taskId: string) => {
-    e.stopPropagation();
-    storageService.deleteTask(taskId);
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-  };
-
-  // Save Questions
-  const handleSaveQuestions = (entry: any) => {
-    storageService.logQuestions({
-      subject_name: 'Biology',
-      total: entry.total,
-      correct: entry.correct,
-      incorrect: entry.incorrect
-    });
-    setTasks([...storageService.getTasksForDate(todayStr)]);
-  };
-
-  // Create Revision Task from Weak Topic
-  const handleCreateRevisionTask = (topicId: string) => {
-    const created = storageService.createRevisionTaskFromWeakTopic(topicId);
-    if (created && created.date === todayStr) {
-      setTasks(prev => [created, ...prev]);
-      setWeakTopics(storageService.getWeakTopics());
+  // The ONE primary action handler
+  const handlePrimaryAction = () => {
+    if (totalTasks === 0) {
+      if (onNavigateToTab) {
+        onNavigateToTab('plan');
+      } else {
+        setIsAddTaskOpen(true);
+      }
+    } else {
+      if (onNavigateToTab) {
+        onNavigateToTab('plan');
+      }
     }
   };
 
   return (
-    <div className="space-y-6 pb-28 md:pb-10 max-w-2xl mx-auto">
-      {/* HEADER SECTION (Matching reference navigation style) */}
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#202025] border border-white/[0.08] flex items-center justify-center text-primary-light shrink-0 shadow-sm">
-            <Sparkles className="w-5 h-5 text-[#8b5cf6]" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {greeting}, {profile.name || 'Aspirant'}
-            </h1>
-            <p className="text-xs text-zinc-400 mt-0.5">Your personal NEET preparation command center</p>
-          </div>
-        </div>
+    <div className="space-y-6 pb-24 md:pb-12 max-w-xl mx-auto px-1 sm:px-0">
+      {/* 1. HEADER */}
+      <header className="space-y-1 pt-2">
+        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+          {greeting}, {profile.name || 'Aspirant'}
+        </h1>
+        <p className="text-sm font-medium text-zinc-400">
+          {profile.target_exam || 'NEET 2027'} · {daysRemaining} days remaining
+        </p>
+      </header>
 
-        {/* Compact Pill Badge */}
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#202025] border border-white/[0.08] text-xs">
-          <span className="w-2 h-2 rounded-full bg-[#6e3ff5]"></span>
-          <span className="text-zinc-200 font-semibold">{profile.target_exam || 'NEET 2027'}</span>
-          <span className="text-zinc-400">· {daysRemaining}d</span>
-        </div>
-      </div>
+      {/* 2. TODAY'S PLAN — Most prominent section */}
+      <section className="dark-card rounded-3xl p-5 sm:p-6 border border-white/[0.08] relative overflow-hidden space-y-5 shadow-lg">
+        {/* Subtle accent glow */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[#6e3ff5]/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
 
-      {/* MOBILE TARGET PILL */}
-      <div className="sm:hidden flex items-center justify-between px-3.5 py-2 rounded-2xl bg-[#202025] border border-white/[0.07] text-xs">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#6e3ff5]"></span>
-          <span className="text-white font-semibold">{profile.target_exam || 'NEET 2027'} Target</span>
-        </div>
-        <span className="text-primary-light font-bold">{daysRemaining} days remaining</span>
-      </div>
-
-      {/* 1. TODAY'S PROGRESS CARD (Featured Hero Card - Inspired by Reference 'Defi Pluse Index' card) */}
-      <div className="dark-card rounded-3xl p-5 sm:p-6 border border-white/[0.08] space-y-4">
         <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Today's Progress
-            </span>
-            <div className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              {completedTasks} of {totalTasks} Tasks
-            </div>
-            <p className="text-xs text-zinc-400">
-              {totalTasks > 0
-                ? `${todayProgressPercent}% completed · ${totalTasks - completedTasks} remaining`
-                : 'No tasks scheduled yet today'}
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[#8b5cf6]">
+            Today's Plan
+          </span>
+          <span className="text-sm font-bold text-zinc-300">
+            {completedTasks} / {totalTasks} completed
+          </span>
+        </div>
+
+        {/* Current / Next Task or Empty State */}
+        {totalTasks === 0 ? (
+          <div className="py-6 text-center space-y-1.5">
+            <p className="text-base font-bold text-white">No tasks scheduled for today</p>
+            <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+              Plan your day to stay on track for your target exam.
             </p>
           </div>
-
-          <div className="shrink-0">
-            <CircularProgress percentage={todayProgressPercent} size={76} strokeWidth={7} />
-          </div>
-        </div>
-
-        {/* Action Buttons: Strong Primary CTA (Bright Purple View Button) + Secondary Pill */}
-        <div className="pt-1 flex items-center gap-2.5">
-          <button
-            onClick={() => setIsAddTaskOpen(true)}
-            className="flex-1 py-3 px-4 btn-primary text-sm font-bold flex items-center justify-center gap-2 shadow-btn"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            + Add Task
-          </button>
-
-          <button
-            onClick={() => setIsLogQuestionsOpen(true)}
-            className="py-3 px-4 rounded-full bg-[#27272f] hover:bg-[#2e2e38] text-white border border-white/[0.08] text-xs font-semibold flex items-center gap-1.5 transition active:scale-98"
-          >
-            <Target className="w-4 h-4 text-[#8b5cf6]" />
-            Log MCQs
-          </button>
-        </div>
-      </div>
-
-      {/* 2. TODAY'S STUDY TASKS (Section heading like "Favourites" / "Lists" in reference) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-amber-400 text-sm">⭐</span>
-            <h2 className="text-sm font-bold text-white tracking-tight">
-              Today's Study Tasks
-            </h2>
-          </div>
-          <span className="text-xs text-zinc-400 font-medium">{tasks.length} planned</span>
-        </div>
-
-        {tasks.length === 0 ? (
-          /* Friendly Empty State with Soft Rounded Corners */
-          <div className="dark-card rounded-3xl p-8 text-center border border-white/[0.06] space-y-3">
-            <div className="w-12 h-12 rounded-full bg-[#27272f] border border-white/[0.08] text-[#8b5cf6] mx-auto flex items-center justify-center">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-base font-bold text-white tracking-tight">Your day is clear.</p>
-              <p className="text-xs text-zinc-400 mt-1">Create your first study task to get started.</p>
-            </div>
-            <div className="pt-2">
-              <button
-                onClick={() => setIsAddTaskOpen(true)}
-                className="btn-primary py-2.5 px-6 text-xs font-bold inline-flex items-center gap-2 shadow-btn"
-              >
-                <Plus className="w-4 h-4" />
-                + Add Task
-              </button>
-            </div>
-          </div>
-        ) : (
+        ) : currentTask ? (
           <div className="space-y-2.5">
-            {tasks.map(task => (
-              <div
-                key={task.id}
-                onClick={() => handleToggleTask(task.id)}
-                className={`group dark-card dark-card-hover rounded-2xl p-4 border cursor-pointer flex items-center justify-between gap-3 transition-all ${
-                  task.completed
-                    ? 'border-white/[0.04] opacity-65 bg-[#1a1a20]'
-                    : 'border-white/[0.08] hover:border-white/[0.14]'
-                }`}
-              >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  {/* Large Touch-friendly Checkbox */}
-                  <button
-                    type="button"
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleToggleTask(task.id);
-                    }}
-                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 border ${
-                      task.completed
-                        ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
-                        : 'border-zinc-600 hover:border-primary-light bg-[#18181e]'
+            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+              {allCompleted ? 'All tasks finished' : 'Current task'}
+            </div>
+
+            <div
+              onClick={() => handleToggleTask(currentTask.id)}
+              className={`rounded-2xl p-4 border transition-all cursor-pointer flex items-start justify-between gap-3.5 ${
+                currentTask.completed
+                  ? 'bg-[#15151a] border-white/[0.04] opacity-70'
+                  : 'bg-[#18181f] hover:bg-[#1f1f28] border-white/[0.08] hover:border-white/[0.14]'
+              }`}
+            >
+              <div className="flex items-start gap-3.5 min-w-0">
+                {/* Large touch-friendly check circle */}
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    handleToggleTask(currentTask.id);
+                  }}
+                  className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center transition-all shrink-0 border ${
+                    currentTask.completed
+                      ? 'bg-[#6e3ff5] border-[#6e3ff5] text-white shadow-sm'
+                      : 'border-zinc-600 hover:border-primary-light bg-[#121216]'
+                  }`}
+                  aria-label={currentTask.completed ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {currentTask.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </button>
+
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <SubjectBadge subject={currentTask.subject_name} size="sm" />
+                    <span className="text-xs font-medium text-zinc-400 truncate">
+                      {currentTask.chapter_name || currentTask.subject_name}
+                    </span>
+                  </div>
+
+                  <h3
+                    className={`text-sm sm:text-base font-bold tracking-tight ${
+                      currentTask.completed ? 'line-through text-zinc-500' : 'text-white'
                     }`}
-                    aria-label={task.completed ? 'Mark incomplete' : 'Mark complete'}
                   >
-                    {task.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                  </button>
+                    {currentTask.title}
+                  </h3>
 
-                  {/* Task details */}
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <SubjectBadge subject={task.subject_name} size="sm" />
-                      <span className="text-xs text-zinc-400 font-medium truncate">
-                        {task.chapter_name || task.subject_name}
-                      </span>
-                    </div>
-
-                    <p
-                      className={`text-sm font-semibold tracking-tight truncate ${
-                        task.completed ? 'line-through text-zinc-500' : 'text-white'
-                      }`}
-                    >
-                      {task.title}
-                    </p>
-
-                    <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-zinc-400" />
-                        {task.duration}m
-                      </span>
-                      <span>·</span>
-                      <span className="text-zinc-300 font-medium">{task.task_type}</span>
-                      <span>·</span>
-                      <PriorityBadge priority={task.priority} />
-                    </div>
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <span className="flex items-center gap-1 font-medium text-zinc-300">
+                      <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                      {currentTask.duration}m
+                    </span>
+                    <span>·</span>
+                    <span className="text-zinc-300 font-medium">{currentTask.task_type}</span>
+                    <span>·</span>
+                    <PriorityBadge priority={currentTask.priority} />
                   </div>
                 </div>
-
-                {/* Right action */}
-                <div className="flex items-center gap-1 shrink-0">
-                  {task.completed && (
-                    <span className="hidden sm:inline-block text-[11px] font-semibold text-purple-300 bg-purple-500/15 px-2.5 py-0.5 rounded-full border border-purple-500/30">
-                      Done
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={e => handleDeleteTask(e, task.id)}
-                    className="w-8 h-8 rounded-full bg-[#1c1c22] text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center transition opacity-0 group-hover:opacity-100"
-                    title="Delete task"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* 3, 4, 5. TODAY'S METRICS (Study Hours, Questions, Streak) */}
-      <div className="space-y-3 pt-1">
-        <div className="flex items-center gap-1.5 px-1">
-          <span className="text-purple-400 text-sm">⚡</span>
-          <h2 className="text-sm font-bold text-white tracking-tight">
-            Daily Metrics
-          </h2>
+            {totalTasks > 1 && !allCompleted && (
+              <p className="text-[11px] text-zinc-500 text-center pt-0.5 font-medium">
+                {totalTasks - completedTasks} {totalTasks - completedTasks === 1 ? 'task' : 'tasks'} remaining today
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {/* The ONE Primary Action */}
+        <div className="pt-1">
+          {totalTasks === 0 ? (
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              className="w-full py-3.5 px-6 rounded-2xl btn-primary text-sm font-bold flex items-center justify-center gap-2 shadow-btn transition active:scale-98"
+            >
+              Plan My Day
+              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              className="w-full py-3.5 px-6 rounded-2xl btn-primary text-sm font-bold flex items-center justify-center gap-2 shadow-btn transition active:scale-98"
+            >
+              Start Today's Plan
+              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          )}
         </div>
+      </section>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] text-center">
-            <span className="block text-[11px] text-zinc-400 font-semibold mb-1 uppercase tracking-wider">
-              Study Hours
-            </span>
-            <span className="text-xl font-black text-white tracking-tight">{studyHoursDisplay}</span>
-            <span className="block text-[10px] text-zinc-400 mt-0.5">Target: {profile.daily_study_goal || 6}h</span>
+      {/* 3. TODAY'S GOAL */}
+      <section className="dark-card rounded-2xl p-5 border border-white/[0.07] space-y-3">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 block">
+          Today's Goal
+        </span>
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* Study hours */}
+          <div className="space-y-1.5">
+            <div className="text-xs text-zinc-400">Study hours:</div>
+            <div className="text-base sm:text-lg font-bold text-white tracking-tight">
+              {studyHoursLogged}h / {goalStudyHours}h
+            </div>
+            <ProgressBar
+              percentage={Math.min(100, Math.round((studyHoursLogged / goalStudyHours) * 100))}
+              colorClass="bg-[#6e3ff5]"
+              height="h-1.5"
+            />
           </div>
 
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] text-center">
-            <span className="block text-[11px] text-zinc-400 font-semibold mb-1 uppercase tracking-wider">
-              Questions
-            </span>
-            <span className="text-xl font-black text-primary-light tracking-tight">{todayQuestionsCount}</span>
-            <span className="block text-[10px] text-zinc-400 mt-0.5">Target: {profile.daily_question_goal || 200}</span>
-          </div>
-
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] text-center">
-            <span className="block text-[11px] text-zinc-400 font-semibold mb-1 uppercase tracking-wider">
-              Accuracy
-            </span>
-            <span className="text-xl font-black text-emerald-400 tracking-tight">
-              {todayQuestionsCount > 0 ? `${todayAccuracy}%` : '0%'}
-            </span>
-            <span className="block text-[10px] text-zinc-400 mt-0.5">MCQ practice</span>
-          </div>
-
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] text-center">
-            <span className="block text-[11px] text-zinc-400 font-semibold mb-1 uppercase tracking-wider">
-              Streak
-            </span>
-            <span className="text-xl font-black text-amber-400 tracking-tight flex items-center justify-center gap-1">
-              {streakInfo.currentStreak > 0 ? (
-                `🔥 ${streakInfo.currentStreak}d`
-              ) : (
-                <span className="text-xs text-zinc-400 font-medium">0 days</span>
-              )}
-            </span>
-            <span className="block text-[10px] text-zinc-400 mt-0.5">Consistency</span>
+          {/* Questions */}
+          <div className="space-y-1.5">
+            <div className="text-xs text-zinc-400">Questions:</div>
+            <div className="text-base sm:text-lg font-bold text-white tracking-tight">
+              {todayQuestionsCount} / {goalQuestions}
+            </div>
+            <ProgressBar
+              percentage={Math.min(100, Math.round((todayQuestionsCount / goalQuestions) * 100))}
+              colorClass="bg-[#8b5cf6]"
+              height="h-1.5"
+            />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 6. SUBJECT PROGRESS (Physics, Chemistry, Biology with subtle colored accents) */}
-      <div className="space-y-3 pt-1">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-blue-400 text-sm">📚</span>
-            <h2 className="text-sm font-bold text-white tracking-tight">
-              Subject Progress
-            </h2>
-          </div>
+      {/* 4. PREPARATION */}
+      <section className="dark-card rounded-2xl p-5 border border-white/[0.07] space-y-3.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 block">
+            Preparation
+          </span>
           {onNavigateToTab && (
             <button
+              type="button"
               onClick={() => onNavigateToTab('progress')}
-              className="text-xs text-primary-light font-medium hover:underline flex items-center gap-0.5"
+              className="text-xs text-primary-light hover:underline font-semibold flex items-center gap-0.5"
             >
-              All Chapters <ChevronRight className="w-3.5 h-3.5" />
+              View Details <ChevronRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {/* Single compact section showing all three subject progress values */}
+        <div className="space-y-3">
           {/* Physics */}
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#38bdf8]"></span>
-                <span className="text-xs font-bold text-white">Physics</span>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#38bdf8]" />
+                <span className="font-semibold text-zinc-200">Physics</span>
               </div>
-              <span className="text-xs font-black text-[#7dd3fc]">{phyProgress}%</span>
+              <span className="font-bold text-[#7dd3fc]">{phyProgress}%</span>
             </div>
             <ProgressBar percentage={phyProgress} colorClass="bg-[#38bdf8]" height="h-1.5" />
           </div>
 
           {/* Chemistry */}
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#c084fc]"></span>
-                <span className="text-xs font-bold text-white">Chemistry</span>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#c084fc]" />
+                <span className="font-semibold text-zinc-200">Chemistry</span>
               </div>
-              <span className="text-xs font-black text-[#e9d5ff]">{chemProgress}%</span>
+              <span className="font-bold text-[#e9d5ff]">{chemProgress}%</span>
             </div>
             <ProgressBar percentage={chemProgress} colorClass="bg-[#c084fc]" height="h-1.5" />
           </div>
 
           {/* Biology */}
-          <div className="dark-card rounded-2xl p-3.5 border border-white/[0.07] space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#34d399]"></span>
-                <span className="text-xs font-bold text-white">Biology</span>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#34d399]" />
+                <span className="font-semibold text-zinc-200">Biology</span>
               </div>
-              <span className="text-xs font-black text-[#6ee7b7]">{bioProgress}%</span>
+              <span className="font-bold text-[#6ee7b7]">{bioProgress}%</span>
             </div>
             <ProgressBar percentage={bioProgress} colorClass="bg-[#34d399]" height="h-1.5" />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 7. WEAK TOPICS (Actionable spaced revision list) */}
-      <div className="space-y-3 pt-1">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-bold text-white tracking-tight">
-              Weak Topics Focus
-            </h2>
-          </div>
-          {onNavigateToTab && (
-            <button
-              onClick={() => onNavigateToTab('tests')}
-              className="text-xs text-primary-light font-medium hover:underline flex items-center gap-0.5"
-            >
-              Test Review <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {weakTopics.length === 0 ? (
-          <div className="dark-card rounded-2xl p-4 text-center border border-white/[0.06]">
-            <p className="text-xs text-zinc-400">
-              No weak topics flagged. Add topics you struggle with in mock tests for targeted revision.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {weakTopics.slice(0, 3).map(item => (
-              <div
-                key={item.id}
-                className="dark-card rounded-2xl p-3.5 border border-white/[0.07] flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <SubjectBadge subject={item.subject_name} size="sm" />
-                    <span className="text-[11px] text-zinc-400 truncate">{item.chapter_name}</span>
-                  </div>
-                  <p className="text-xs font-bold text-white truncate">{item.topic_name}</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleCreateRevisionTask(item.id)}
-                  className="px-3 py-1.5 rounded-full bg-[#2c2c36] hover:bg-primary hover:text-white text-zinc-200 text-xs font-semibold transition border border-white/[0.08] shrink-0"
-                >
-                  Revise Today
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Floating Add Task Button on Mobile */}
-      <div className="fixed bottom-20 right-5 md:hidden z-30">
-        <button
-          onClick={() => setIsAddTaskOpen(true)}
-          className="w-14 h-14 rounded-full btn-primary shadow-btn flex items-center justify-center border border-white/20 active:scale-95 transition"
-          aria-label="Add Task"
-        >
-          <Plus className="w-6 h-6 stroke-[2.5]" />
-        </button>
-      </div>
-
-      {/* Modals */}
+      {/* Add Task Modal fallback if needed */}
       <AddTaskModal
         isOpen={isAddTaskOpen}
         onClose={() => setIsAddTaskOpen(false)}
         onAddTask={handleAddTask}
-      />
-
-      <LogQuestionsModal
-        isOpen={isLogQuestionsOpen}
-        onClose={() => setIsLogQuestionsOpen(false)}
-        onSave={handleSaveQuestions}
       />
     </div>
   );
